@@ -93,7 +93,10 @@ export type Settings = {
   amber: number
   red: number
   awaitingHours: number
+  /** Seconds between refreshes; 0 refreshes only on demand. */
   refreshSeconds: number
+  /** Refresh a few seconds after each Claude response. */
+  refreshOnResponse: boolean
   osNotify: boolean
   statusLine: boolean
   /** The slim usage bar above the prompt, with a button that opens the dashboard. */

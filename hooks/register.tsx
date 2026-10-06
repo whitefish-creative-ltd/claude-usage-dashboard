@@ -281,8 +281,10 @@ async function checkAlerts($: $T, settings: Settings, plan: Plan | null, agg: Ag
 
 async function restartTimer($: $T) {
   timer?.cancel()
+  timer = null
   const s = await read($, settingsA)
-  timer = $.clock.every(Math.max(15, s.refreshSeconds) * 1000, () => void refresh($))
+  // 0 is manual: no timer, refresh on Refresh or when the dashboard opens.
+  if (s.refreshSeconds > 0) timer = $.clock.every(Math.max(15, s.refreshSeconds) * 1000, () => void refresh($))
 }
 
 async function saveSettings($: $T, patch: Partial<Settings>) {
@@ -292,7 +294,7 @@ async function saveSettings($: $T, patch: Partial<Settings>) {
     return merged
   })
   await $.store.set('settings', next)
-  if (patch.refreshSeconds) await restartTimer($)
+  if (patch.refreshSeconds !== undefined) await restartTimer($)
   void refresh($)
 }
 
@@ -335,8 +337,8 @@ export const register: Register = on => {
   })
 
   // Each model response moves the plan windows: refresh shortly after, once.
-  on('session.measure', ($, e, next) => {
-    if (e.changed.includes('rateLimits')) {
+  on('session.measure', async ($, e, next) => {
+    if (e.changed.includes('rateLimits') && (await read($, settingsA)).refreshOnResponse) {
       measureTimer?.cancel()
       measureTimer = $.clock.after(4000, () => void refresh($))
     }

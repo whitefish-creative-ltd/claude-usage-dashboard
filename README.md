@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.1.1" src="https://img.shields.io/badge/version-1.1.1-0A4E75">
+  <img alt="Version 1.2.0" src="https://img.shields.io/badge/version-1.2.0-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS" src="https://img.shields.io/badge/platform-macOS-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -96,7 +96,8 @@ A few things worth knowing:
 | Status line | On | Shows `5h · day · wk` in the status line |
 | Usage bar above the prompt | On | The slim bar with the **Dashboard** button (alerts still show when it's off) |
 | "Awaiting you" window | 12h | How recently an idle session must have been active to count as awaiting you |
-| Refresh every | 1 min | Also refreshes a few seconds after each Claude response |
+| Refresh every | 1 minute | How often the figures update: 30 seconds to 30 minutes, or Manual (only when you press Refresh or open the dashboard) |
+| After each response | On | Also updates a few seconds after each Claude reply |
 | Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard` |
 
 ## Requirements

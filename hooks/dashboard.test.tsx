@@ -246,6 +246,7 @@ describe('pane', () => {
       await ui.press({ key: 'tab-settings' })
       expect(await ui.find({ key: 'osNotify' })).toBeDefined()
       expect(await ui.find({ key: 'close-dashboard' })).toBeDefined()
+      expect(await ui.find({ key: 'refreshOnResponse' })).toBeDefined()
       expect(await ui.find({ type: 'Link' })).toBeDefined()
       await ui.press({ key: 'tab-overview' })
       await ui.unmount()

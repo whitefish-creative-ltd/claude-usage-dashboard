@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: Settings = {
   red: 90,
   awaitingHours: 12,
   refreshSeconds: 60,
+  refreshOnResponse: true,
   osNotify: true,
   statusLine: true,
   showBand: true,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0 — 2026-10-06
+
+- Settings → Refresh: choose how often the figures update (30 seconds to 30 minutes, or Manual), and whether to update after each Claude reply
+
 ## 1.1.1 — 2026-10-06
 
 - Fixed the session you're in being listed under "Ungrouped" (the app's session list leaves it out), which made the Projects tab differ between sessions

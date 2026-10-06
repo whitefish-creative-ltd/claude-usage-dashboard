@@ -606,6 +606,20 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     body = (
       <Box flexDirection="column">
         {section(
+          'Refresh',
+          null,
+          field(
+            'Refresh every',
+            'How often the figures update. Manual updates only when you press Refresh or open the dashboard.',
+            pick('refresh', settings.refreshSeconds, [0, 30, 60, 120, 300, 600, 900, 1800], n => (n === 0 ? 'Manual' : n < 60 ? `${n} seconds` : n === 60 ? '1 minute' : `${n / 60} minutes`), v => act.saveSettings({ refreshSeconds: v })),
+          ),
+          field(
+            'After each response',
+            'Update a few seconds after each Claude reply.',
+            <Button key="refreshOnResponse" label={settings.refreshOnResponse ? 'On' : 'Off'} onPress={() => act.saveSettings({ refreshOnResponse: !settings.refreshOnResponse })} />,
+          ),
+        )}
+        {section(
           'Budget',
           null,
           field('Working days', `Budget days run 24 hours from your weekly reset; the first ${work} are working days (${workDayNames}). Each adds ${fmtPct(budget)} of the weekly limit.`, pick('workDays', settings.workDays, [1, 2, 3, 4, 5, 6, 7], n => `${n} day${n > 1 ? 's' : ''}`, v => act.saveSettings({ workDays: v }))),
@@ -624,7 +638,6 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           'Data',
           null,
           field('“Awaiting you” window', 'Idle sessions active within this time.', pick('awaiting', settings.awaitingHours, [1, 4, 12, 24, 72], n => `${n}h`, v => act.saveSettings({ awaitingHours: v }))),
-          field('Refresh every', 'Also refreshes after each response.', pick('refresh', settings.refreshSeconds, [30, 60, 120, 300], n => (n < 60 ? `${n}s` : `${n / 60} min`), v => act.saveSettings({ refreshSeconds: v }))),
           field('App access', 'Plan limits per model and your session list.', <Button key="connect" label="Connect" onPress={() => act.refresh(true)} />),
         )}
         {section(
