@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 — 2026-10-06
+
+- Group names are bold blue headings again, with a Hide/Show control on the right instead of an arrow
+
 ## 1.0.1 — 2026-10-06
 
 - Project groups use the names exactly as they appear in the Claude Desktop sidebar, not in capitals

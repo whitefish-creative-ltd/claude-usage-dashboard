@@ -210,6 +210,7 @@ describe('pane', () => {
       const ui = await $.ui.mount({ plugin: 'token-dashboard', surface, component: 'Pane', requestId: 'token-dashboard', props: { title: 'x', isFocused: true, bodyColumns: 100, placement: 'dock' } })
       await ui.press({ key: 'refresh' })
       await ui.press({ key: 'tab-projects' })
+      expect(await ui.find({ type: 'Text', text: /^Clearloop$/ })).toBeDefined()
       expect(await ui.find({ key: 'group-toggle-Clearloop' })).toBeDefined()
       expect(await ui.find({ key: 'group-toggle-Other Stuff' })).toBeDefined()
       expect(await ui.find({ key: 'p-ClearLoop' })).toBeDefined()

@@ -487,10 +487,15 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
             <Box key={`group-${g.name}`} flexDirection="column" marginTop={2}>
               {Svg ? <Svg source={rule()} alt="" /> : <Text dimColor>{'─'.repeat(Math.max(10, Math.min(60, cols - 4)))}</Text>}
               <Box flexDirection="row" justifyContent="space-between" alignItems="center" marginTop={1} marginBottom={isOpen ? 1 : 0}>
-                <Button key={`group-toggle-${g.name}`} plain label={`${isOpen ? '▾' : '▸'} ${g.name}`} onPress={toggle} />
-                <Text dimColor>
-                  {g.projects.length} project{g.projects.length === 1 ? '' : 's'} · {fmtTokens(g.week)} this week
+                <Text bold color="#3987e5">
+                  {g.name}
                 </Text>
+                <Box flexDirection="row" gap={2} alignItems="center">
+                  <Text dimColor>
+                    {g.projects.length} project{g.projects.length === 1 ? '' : 's'} · {fmtTokens(g.week)} this week
+                  </Text>
+                  <Button key={`group-toggle-${g.name}`} plain label={isOpen ? 'Hide' : 'Show'} onPress={toggle} />
+                </Box>
               </Box>
               {isOpen && g.name === NO_SESSION ? <Text dimColor>Used from the terminal, or with no session in the app.</Text> : null}
               {isOpen ? g.projects.map(projectRow) : null}
