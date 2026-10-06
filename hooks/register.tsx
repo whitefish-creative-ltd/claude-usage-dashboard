@@ -261,7 +261,7 @@ async function checkAlerts($: $T, settings: Settings, plan: Plan | null, agg: Ag
   }
   if (changed) await $.store.set('alerts', sent)
 
-  if (settings.statusLine) {
+  if (settings.statusLine && !settings.isClosed) {
     const dot = (l: Level) => (l === 'red' ? '🔴 ' : l === 'amber' ? '🟠 ' : '')
     const parts = list.filter(r => ['five', 'day', 'week'].includes(r.id)).map(r => `${dot(levelOf(r.pct, settings))}${r.id === 'five' ? '5h' : r.id === 'day' ? 'day' : 'wk'} ${fmtPct(r.pct)}`)
     $.ui.status(parts.length ? parts.join(' · ') : undefined)
@@ -285,6 +285,12 @@ async function saveSettings($: $T, patch: Partial<Settings>) {
   await $.store.set('settings', next)
   if (patch.refreshSeconds) await restartTimer($)
   void refresh($)
+}
+
+async function closeDashboard($: $T) {
+  await saveSettings($, { isClosed: true })
+  $.ui.status(undefined)
+  await $.ui.close({ id: PANE })
 }
 
 async function openSession($: $T, row: SessionRow) {
@@ -312,6 +318,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'usage-dashboard' }, async $ => {
+    if ((await read($, settingsA)).isClosed) await saveSettings($, { isClosed: false })
     await $.ui.open({ id: PANE, title: 'Claude usage overview' })
     void refresh($)
     // No text: nothing is added to the conversation, so opening it costs no tokens.
@@ -333,7 +340,7 @@ export const register: Register = on => {
     const plan = await read($, planA)
     const agg = await read($, aggA)
     const history = await read($, historyA)
-    if (e.props.hasSurvey || !plan) return next(e)
+    if (e.props.hasSurvey || !plan || settings.isClosed) return next(e)
     const now = await $.clock.now()
     const all = readings(settings, plan, agg, history, now).filter(r => ['five', 'day', 'week'].includes(r.id))
     const hot = readings(settings, plan, agg, history, now).filter(r => levelOf(r.pct, settings) !== 'ok')
@@ -383,6 +390,7 @@ export const register: Register = on => {
       saveSettings: patch => void saveSettings($, patch),
       openSession: row => void openSession($, row),
       rearm: () => void $.store.delete('alerts').then(() => refresh($)),
+      close: () => void closeDashboard($),
       setCollapsed: groups =>
         void update($, collapsedA, () => groups).then(() => $.store.set('collapsedGroups', groups)),
     })

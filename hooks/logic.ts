@@ -1,4 +1,4 @@
-import type { Aggregate, Plan, PlanWindow, SessionRow, Settings, Snapshot } from '../types'
+import type { Aggregate, Plan, PlanWindow, SessionRow, Settings, Snapshot, TokenBucket } from '../types'
 
 export const DAY = 86_400_000
 export const HOUR = 3_600_000
@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
   osNotify: true,
   statusLine: true,
   showBand: true,
+  isClosed: false,
 }
 
 /** Categorical slots (dataviz reference palette), assigned in fixed order. */
@@ -263,7 +264,7 @@ export function pushSnapshot(history: Snapshot[], plan: Plan | null, now: number
 // ---------- projects by sidebar group ----------
 
 export const UNGROUPED = 'Ungrouped'
-export const NO_SESSION = 'Not in the app'
+export const NO_SESSION = 'Terminal and other'
 
 export type ProjectGroup<P> = { name: string; projects: P[]; week: number; fourteenDays: number }
 
@@ -303,4 +304,83 @@ export function groupProjects<P extends { name: string; week: { total: number };
     return i === -1 ? 1e5 : i
   }
   return [...groups.values()].sort((a, b) => place(a) - place(b) || b.week - a.week || b.fourteenDays - a.fourteenDays)
+}
+
+// ---------- usage by named session ----------
+
+export type SessionUsage = {
+  key: string
+  title: string
+  project: string
+  isArchived: boolean
+  session: TokenBucket
+  today: TokenBucket
+  week: TokenBucket
+  fourteenDays: TokenBucket
+  byModel: Record<string, number>
+}
+
+const zero = (): TokenBucket => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0, messages: 0 })
+const plus = (a: TokenBucket, b: TokenBucket): TokenBucket => ({
+  input: a.input + b.input,
+  output: a.output + b.output,
+  cacheWrite: a.cacheWrite + b.cacheWrite,
+  cacheRead: a.cacheRead + b.cacheRead,
+  total: a.total + b.total,
+  messages: a.messages + b.messages,
+})
+
+/**
+ * Usage per Claude Desktop session, titled as in the sidebar and filed under its
+ * sidebar group. Claude Code usage with no desktop session (the terminal, or a
+ * session since deleted) is summed per project folder under NO_SESSION.
+ */
+export function groupSessionUsage(agg: Aggregate, sidebar: SessionRow[], groupOrder: string[] = []): ProjectGroup<SessionUsage>[] {
+  const byCli = new Map((agg.sessions ?? []).map(s => [s.name, s]))
+  const groupOf = new Map(sidebar.map(s => [s.sessionId, s.group ?? UNGROUPED]))
+  const claimed = new Set<string>()
+  const rows: { row: SessionUsage; group: string }[] = []
+  for (const d of agg.desktopSessions ?? []) {
+    const parts = d.cliIds.map(id => byCli.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
+    d.cliIds.forEach(id => claimed.add(id))
+    if (!parts.length) continue
+    const row: SessionUsage = { key: d.id, title: d.title, project: parts[0]?.project ?? '', isArchived: d.isArchived, session: zero(), today: zero(), week: zero(), fourteenDays: zero(), byModel: {} }
+    for (const p of parts) {
+      row.session = plus(row.session, p.session)
+      row.today = plus(row.today, p.today)
+      row.week = plus(row.week, p.week)
+      row.fourteenDays = plus(row.fourteenDays, p.fourteenDays)
+      for (const [m, v] of Object.entries(p.byModel)) row.byModel[m] = (row.byModel[m] ?? 0) + v
+    }
+    if (row.fourteenDays.total > 0) rows.push({ row, group: groupOf.get(d.id) ?? UNGROUPED })
+  }
+  const loose = new Map<string, SessionUsage>()
+  for (const s of agg.sessions ?? []) {
+    if (claimed.has(s.name) || s.fourteenDays.total <= 0) continue
+    const r = loose.get(s.project) ?? { key: `cli-${s.project}`, title: s.project, project: s.project, isArchived: false, session: zero(), today: zero(), week: zero(), fourteenDays: zero(), byModel: {} }
+    r.session = plus(r.session, s.session)
+    r.today = plus(r.today, s.today)
+    r.week = plus(r.week, s.week)
+    r.fourteenDays = plus(r.fourteenDays, s.fourteenDays)
+    for (const [m, v] of Object.entries(s.byModel)) r.byModel[m] = (r.byModel[m] ?? 0) + v
+    loose.set(s.project, r)
+  }
+  for (const r of loose.values()) rows.push({ row: r, group: NO_SESSION })
+
+  const groups = new Map<string, ProjectGroup<SessionUsage>>()
+  for (const { row, group } of rows) {
+    const g = groups.get(group) ?? { name: group, projects: [], week: 0, fourteenDays: 0 }
+    g.projects.push(row)
+    g.week += row.week.total
+    g.fourteenDays += row.fourteenDays.total
+    groups.set(group, g)
+  }
+  for (const g of groups.values()) g.projects.sort((a, b) => b.week.total - a.week.total || b.fourteenDays.total - a.fourteenDays.total)
+  const place = (g: ProjectGroup<SessionUsage>) => {
+    if (g.name === NO_SESSION) return 1e6 + 1
+    if (g.name === UNGROUPED) return 1e6
+    const i = groupOrder.indexOf(g.name)
+    return i === -1 ? 1e5 : i
+  }
+  return [...groups.values()].sort((a, b) => place(a) - place(b) || b.week - a.week)
 }

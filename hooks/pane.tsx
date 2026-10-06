@@ -15,7 +15,7 @@ import {
   fmtPct,
   NO_SESSION,
   fmtTokens,
-  groupProjects,
+  groupSessionUsage,
   levelOf,
   prettyEntry,
   prettyModel,
@@ -37,6 +37,7 @@ export type PaneActions = {
   saveSettings: (patch: Partial<Settings>) => void
   openSession: (row: SessionRow) => void
   rearm: () => void
+  close: () => void
   setCollapsed: (groups: string[]) => void
 }
 
@@ -234,7 +235,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
 
   const limits = section(
     'Plan usage limits',
-    'Your whole account: every computer, the mobile app and claude.ai chat.',
+    'Your plan’s limits, across all your devices.',
     limitRow('l-five', 'Current session', resets(five?.resetsAt) || '5-hour window', five?.percentUsed),
     limitRow(
       'l-day',
@@ -288,7 +289,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     )
     return section(
       'Daily budget',
-      `${fmtPct(budget)} of the weekly limit per working day (${workDayNames}).${isDayOff ? ' Today is a day off: anything used comes out of the week’s allowance.' : ''}${today.isEstimate ? ' Today is estimated until a full day has been recorded.' : ''}`,
+      `Weekly limit ÷ ${work} working days: ${fmtPct(budget)} a day.${isDayOff ? ' Today is a day off.' : ''}${today.isEstimate ? ' Today is an estimate.' : ''}`,
       <Box flexDirection="row" gap={3} alignItems="center" flexWrap="wrap">
         {Svg ? <Svg source={donut(used, budget, tone, TONE.red)} alt={`Today: ${fmtPct(today.pctOfBudget)} of the daily budget used`} width={120} height={120} /> : null}
         <Box flexDirection="column">
@@ -322,7 +323,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
 
   const sinceSession = agg ? `Since ${clock(agg.sessionStart)}` : ''
   const sinceWeek = agg ? `Since ${weekday(agg.weekStart)} ${clock(agg.weekStart)}` : ''
-  const localNote = 'Claude Code on this computer only — other computers and the mobile app aren’t included here.'
+  const localNote = 'Claude Code tokens on this computer.'
 
   // ---------------------------------------------------------- tabs
 
@@ -410,7 +411,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           week?.resetsAt &&
           section(
             'Weekly limit over time',
-            'Measured readings against an even pace for your working days.',
+            'Weekly limit used against your working-day pace.',
             (() => {
               const end = Date.parse(week.resetsAt as string)
               const start = end - 7 * DAY
@@ -445,7 +446,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
               )
             })(),
           )}
-        {section('Token types this week', `${sinceWeek}. Cache reads dominate long sessions; output is what Claude wrote.`, ...typeRows(t.week))}
+        {section('Token types this week', 'Tokens since the weekly reset, by type.', ...typeRows(t.week))}
         {Svg &&
           section(
             'When you work',
@@ -455,21 +456,29 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
       </Box>
     )
   } else if (tab === 'projects' && agg) {
-    const rows = agg.projects.filter(p => p.fourteenDays.total > 0)
-    const max = Math.max(0, ...rows.map(p => p.week.total))
     const sessionRows = sessions?.status === 'ok' ? sessions.rows : []
-    const groups = groupProjects(rows, sessionRows, agg.cwdProjects ?? {}, sessions?.groupOrder)
+    const groups = groupSessionUsage(agg, sessionRows, sessions?.groupOrder)
+    const rows = groups.flatMap(g => g.projects)
+    const max = Math.max(0, ...rows.map(p => p.week.total))
     const projectRow = (p: (typeof rows)[number]) =>
-      rankRow(`p-${p.name}`, p.name, `Current session ${fmtTokens(p.session.total)} · today ${fmtTokens(p.today.total)}`, p.week.total, max, '#3987e5', agg.models.map(m => ({ value: p.byModel[m.name] ?? 0, color: color(m.name) })))
+      rankRow(
+        `p-${p.key}`,
+        p.title,
+        `${p.project}${p.isArchived ? ' · archived' : ''} · today ${fmtTokens(p.today.total)}`,
+        p.week.total,
+        max,
+        '#3987e5',
+        agg.models.map(m => ({ value: p.byModel[m.name] ?? 0, color: color(m.name) })),
+      )
     body = (
       <Box flexDirection="column">
         {section(
           'Projects',
-          `Grouped as in the sidebar, by each project's most recent session. ${sinceWeek} · ${localNote}`,
+          `Tokens per project since the weekly reset, on this computer.`,
           rows.length === 0 ? <Text dimColor>No Claude Code usage in the last 14 days.</Text> : legend(modelLegend()),
           needsAccess ? (
             <Box flexDirection="row" gap={2} alignItems="center">
-              <Text dimColor>Grouping needs access to your session list.</Text>
+              <Text dimColor>Connect to show your sidebar groups.</Text>
               <Button key="connect" label="Connect" variant="primary" onPress={() => act.refresh(true)} />
             </Box>
           ) : null,
@@ -497,7 +506,6 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
                   <Button key={`group-toggle-${g.name}`} plain label={isOpen ? 'Hide' : 'Show'} onPress={toggle} />
                 </Box>
               </Box>
-              {isOpen && g.name === NO_SESSION ? <Text dimColor>Used from the terminal, or with no session in the app.</Text> : null}
               {isOpen ? g.projects.map(projectRow) : null}
             </Box>
           )
@@ -512,16 +520,16 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     body = (
       <Box flexDirection="column">
         {modelWindows.length > 0 &&
-          section('Model limits', 'Whole account.', ...modelWindows.map(w => limitRow(`m-${w.kind}`, w.kind.slice(6), resets(w.resetsAt), w.percentUsed)))}
+          section('Model limits', 'Weekly limits per model, across all your devices.', ...modelWindows.map(w => limitRow(`m-${w.kind}`, w.kind.slice(6), resets(w.resetsAt), w.percentUsed)))}
         {section(
           'Models this week',
-          `${sinceWeek} · ${localNote}`,
+          'Tokens per model since the weekly reset, on this computer.',
           ...ms.map(m => rankRow(`mm-${m.name}`, prettyModel(m.name), `Current session ${fmtTokens(m.session.total)} · output ${fmtTokens(m.week.output)}`, m.week.total, mMax, color(m.name))),
         )}
         {Svg &&
           section(
             'Model mix per day',
-            'Last 14 days.',
+            'Tokens per day by model, last 14 days.',
             chart(
               bars({
                 columns: agg.daily.map(x => ms.map(m => x.byModel[m.name] ?? 0)),
@@ -535,7 +543,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           )}
         {section(
           'Where Claude Code ran',
-          `This computer, ${sinceWeek.toLowerCase()}. Chat and mobile usage aren’t stored locally — they only show in the plan limits.`,
+          'Tokens per Claude Code app since the weekly reset, on this computer.',
           ...es.map(x => rankRow(`e-${x.name}`, prettyEntry(x.name), `Current session ${fmtTokens(x.session.total)}`, x.week.total, eMax, '#199e70')),
         )}
       </Box>
@@ -604,7 +612,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         )}
         {section(
           'Alerts',
-          'Apply to the current session, today’s budget and the weekly limits.',
+          'Warning levels for the session, daily and weekly limits.',
           field('Amber at', 'First warning.', pick('amber', settings.amber, [50, 60, 70, 75, 80, 85], n => `${n}%`, v => act.saveSettings({ amber: v }))),
           field('Red at', 'Must be above amber.', pick('red', settings.red, [70, 80, 85, 90, 95, 100], n => `${n}%`, v => act.saveSettings({ red: v }))),
           field('macOS notifications', 'In addition to the in-app toast.', <Button key="osNotify" label={settings.osNotify ? 'On' : 'Off'} onPress={() => act.saveSettings({ osNotify: !settings.osNotify })} />),
@@ -618,6 +626,11 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           field('“Awaiting you” window', 'Idle sessions active within this time.', pick('awaiting', settings.awaitingHours, [1, 4, 12, 24, 72], n => `${n}h`, v => act.saveSettings({ awaitingHours: v }))),
           field('Refresh every', 'Also refreshes after each response.', pick('refresh', settings.refreshSeconds, [30, 60, 120, 300], n => (n < 60 ? `${n}s` : `${n / 60} min`), v => act.saveSettings({ refreshSeconds: v }))),
           field('App access', 'Plan limits per model and your session list.', <Button key="connect" label="Connect" onPress={() => act.refresh(true)} />),
+        )}
+        {section(
+          'Dashboard',
+          null,
+          field('Close the dashboard', 'Hides the dashboard, the bar above the prompt and the status line. Open it again with /usage-dashboard.', <Button key="close-dashboard" label="Close" onPress={() => act.close()} />),
         )}
         {section(
           'About',

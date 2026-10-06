@@ -12,6 +12,7 @@ Usage: aggregate.py [--since-ms <ms>] [--session-since-ms <ms>] [--sync-dir <pat
   sync-dir: a folder every Mac can see (default: iCloud Drive/Claude Usage). Each Mac
   writes its own records there as <name>-<id>.json and reads every other Mac's.
 """
+import fcntl
 import glob
 import json
 import os
@@ -27,7 +28,7 @@ PROJECTS = os.path.join(CLAUDE_DIR, "projects")
 CACHE_DIR = os.path.join(CLAUDE_DIR, "token-dashboard")
 CACHE = os.path.join(CACHE_DIR, "cache.json")
 KEEP_DAYS = 15
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 ICLOUD = os.path.join(HOME, "Library", "Mobile Documents", "com~apple~CloudDocs")
 DEFAULT_SYNC = os.path.join(ICLOUD, "Claude Usage")
 SYNC_VERSION = 1
@@ -110,7 +111,7 @@ def load_cache():
 
 def save_cache(c):
     os.makedirs(CACHE_DIR, exist_ok=True)
-    tmp = CACHE + ".tmp"
+    tmp = f"{CACHE}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         json.dump(c, f, separators=(",", ":"))
     os.replace(tmp, CACHE)
@@ -202,6 +203,7 @@ def scan(cache):
                 int(u.get("cache_creation_input_tokens") or 0),
                 int(u.get("cache_read_input_tokens") or 0),
                 1 if d.get("isSidechain") else 0,
+                d.get("sessionId") or os.path.splitext(os.path.basename(path))[0],
             ]
         files[path] = {"o": off + end + 1}
     for p in list(files):
@@ -209,6 +211,27 @@ def scan(cache):
             del files[p]
     for k in [k for k, r in recs.items() if r[0] < cutoff]:
         del recs[k]
+
+
+DESKTOP_SESSIONS = os.path.join(HOME, "Library", "Application Support", "Claude", "claude-code-sessions")
+
+
+def desktop_sessions():
+    """The Claude Desktop app's own record of each Code-tab session: its sidebar title
+    and the Claude Code session ids whose history it holds (current and earlier ones)."""
+    out = []
+    for path in glob.glob(os.path.join(DESKTOP_SESSIONS, "*", "*", "local_*.json")):
+        try:
+            with open(path) as f:
+                d = json.load(f)
+        except Exception:
+            continue
+        ids = [d.get("cliSessionId")] + list(d.get("priorCliSessionIds") or [])
+        ids = [i for i in ids if isinstance(i, str) and i]
+        if not ids or not d.get("sessionId"):
+            continue
+        out.append({"id": d["sessionId"], "title": d.get("title") or "Untitled session", "cliIds": ids, "isArchived": bool(d.get("isArchived"))})
+    return out
 
 
 def empty():
@@ -244,7 +267,8 @@ def aggregate(sources, since, session_since):
     # Budget days: seven 24-hour slots counted from the weekly reset.
     week_days = [{"t": int((week_ts + i * 86400) * 1000), "byModel": {}, **empty()} for i in range(7)]
     totals = {"lastHour": empty(), "session": empty(), "today": empty(), "week": empty(), "fourteenDays": empty()}
-    projects, models, entries, machines = {}, {}, {}, {}
+    projects, models, entries, machines, sessions = {}, {}, {}, {}, {}
+    session_project = {}
     heat = [[0] * 24 for _ in range(7)]  # weekday x hour, last 14 days
 
     def every():
@@ -290,7 +314,12 @@ def aggregate(sources, since, session_since):
             add(totals["today"], r)
         if is_week:
             add(totals["week"], r)
-        for table, name in ((projects, r[1]), (models, r[2]), (entries, r[3]), (machines, mname)):
+        sid = r[9] if len(r) > 9 else None
+        if sid:
+            session_project[sid] = r[1]
+        for table, name in ((projects, r[1]), (models, r[2]), (entries, r[3]), (machines, mname), (sessions, sid)):
+            if name is None:
+                continue
             row = table.setdefault(name, {"name": name, "session": empty(), "today": empty(), "week": empty(), "fourteenDays": empty(), "byModel": {}, "machines": []})
             if mname not in row["machines"]:
                 row["machines"].append(mname)
@@ -317,6 +346,7 @@ def aggregate(sources, since, session_since):
         "daily": days,
         "weekDays": week_days,
         "projects": ranked(projects),
+        "sessions": [{**row, "project": session_project.get(row["name"], "unknown")} for row in ranked(sessions)],
         "machines": [
             {**row, "updatedAt": next((u for n, _, u, _ in sources if n == row["name"]), 0), "isThis": next((t for n, _, _, t in sources if n == row["name"]), False)}
             for row in ranked(machines)
@@ -347,13 +377,21 @@ def main():
             session_since = None
     sync_arg = arg("--sync-dir") or "off"
     sync_dir = None if sync_arg == "off" else (DEFAULT_SYNC if sync_arg == "default" else os.path.expanduser(sync_arg))
+    # One scan at a time: several Claude sessions refresh on their own timers.
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    lock = open(os.path.join(CACHE_DIR, "cache.lock"), "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
     cache = load_cache()
     started = time.time()
     scan(cache)
     name, mid = machine()
+    out_desktop = desktop_sessions()
     sources, sync_note = sync(cache, sync_dir, name, mid)
     save_cache(cache)
+    fcntl.flock(lock, fcntl.LOCK_UN)
+    lock.close()
     out = aggregate(sources, since, session_since)
+    out["desktopSessions"] = out_desktop
     out["sync"] = {"dir": sync_dir, "note": sync_note, "machines": len(sources)}
     if "--cwds-stdin" in sys.argv:
         try:

@@ -39,6 +39,10 @@ export type Aggregate = {
   heatmap: number[][]
   scanMs: number
   records: number
+  /** Usage per Claude Code session id, with the project folder it ran in. */
+  sessions?: (RankedRow & { project: string })[]
+  /** Claude Desktop's own session records: sidebar title and the Claude Code ids it holds. */
+  desktopSessions?: { id: string; title: string; cliIds: string[]; isArchived: boolean }[]
   /** Which project each session folder belongs to (when asked with --cwds-stdin). */
   cwdProjects?: Record<string, string>
 }
@@ -94,6 +98,8 @@ export type Settings = {
   statusLine: boolean
   /** The slim usage bar above the prompt, with a button that opens the dashboard. */
   showBand: boolean
+  /** Closed from Settings: no pane, bar or status line until /usage-dashboard opens it again. */
+  isClosed: boolean
 }
 
 export type Tab = 'overview' | 'tokens' | 'projects' | 'models' | 'sessions' | 'settings'

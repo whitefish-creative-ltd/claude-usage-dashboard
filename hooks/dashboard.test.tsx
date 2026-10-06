@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 import type { Aggregate, Plan, Snapshot } from '../types'
 import { bars } from './charts'
-import { DAY, DEFAULT_SETTINGS, NO_SESSION, UNGROUPED, allowanceAt, allowanceSteps, assignColors, groupProjects, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
+import { DAY, DEFAULT_SETTINGS, NO_SESSION, allowanceAt, allowanceSteps, assignColors, groupSessionUsage, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 const TODAY = Date.parse('2026-10-06T00:00:00Z')
@@ -111,26 +111,23 @@ describe('logic', () => {
     expect(prettyModel('claude-opus-5')).toBe('Opus 5')
   })
 
-  test('files each project under the group of its most recent session, in sidebar order', async () => {
-    const proj = (name: string, week: number) => ({ name, week: bucket(week), fourteenDays: bucket(week) })
-    const sess = (cwd: string, group: string | undefined, at: string, isArchived = false) => ({ sessionId: cwd + at, title: 't', cwd, isRunning: false, isArchived, lastActivityAt: at, remoteControlActive: false, group })
-    const groups = groupProjects(
-      [proj('A', 10), proj('B', 50), proj('C', 5), proj('D', 1), proj('E', 2)],
-      [
-        sess('/a', 'Other', '2026-10-01T00:00:00Z'),
-        sess('/a/site', 'Other', '2026-10-02T00:00:00Z'),
-        sess('/a', 'Terra', '2026-10-05T00:00:00Z'), // most recent: A moves to Terra
-        sess('/b', 'Other', '2026-10-01T00:00:00Z'),
-        sess('/c', undefined, '2026-10-01T00:00:00Z'),
-        sess('/e', 'Terra', '2026-10-01T00:00:00Z'),
-        sess('/e', undefined, '2026-10-09T00:00:00Z', true), // archived: ignored while a live one exists
+  test('lists usage per desktop session, titled and grouped as in the sidebar', async () => {
+    const row = (name: string, project: string, week: number) => ({ name, project, session: bucket(0), today: bucket(0), week: bucket(week), fourteenDays: bucket(week), byModel: { 'claude-opus-5-5': week } })
+    const a = {
+      ...agg(),
+      sessions: [row('c1', 'TerraVitae', 10), row('c0', 'TerraVitae', 5), row('c2', 'ClearLoop', 50), row('c3', 'hoelio', 7), row('c4', 'hoelio', 3)],
+      desktopSessions: [
+        { id: 'd1', title: 'Terra Vitae - Build', cliIds: ['c1', 'c0'], isArchived: false },
+        { id: 'd2', title: '1.8.0', cliIds: ['c2'], isArchived: false },
+        { id: 'd9', title: 'No usage', cliIds: ['c9'], isArchived: false },
       ],
-      { '/a': 'A', '/a/site': 'A', '/b': 'B', '/c': 'C', '/e': 'E' },
-      ['Terra', 'Other'],
-    )
-    expect(groups.map(g => g.name)).toEqual(['Terra', 'Other', UNGROUPED, NO_SESSION])
-    expect(groups[0]?.projects.map(p => p.name)).toEqual(['A', 'E'])
-    expect(groups[3]?.projects.map(p => p.name)).toEqual(['D'])
+    }
+    const sess = (id: string, group?: string) => ({ sessionId: id, title: 't', cwd: '/x', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', remoteControlActive: false, group })
+    const groups = groupSessionUsage(a, [sess('d1', 'Terra Vitae'), sess('d2', 'Clearloop')], ['Terra Vitae', 'Clearloop'])
+    expect(groups.map(g => g.name)).toEqual(['Terra Vitae', 'Clearloop', NO_SESSION])
+    expect(groups[0]?.projects[0]?.title).toBe('Terra Vitae - Build')
+    expect(groups[0]?.projects[0]?.week.total).toBe(15) // both of its Claude Code ids
+    expect(groups[2]?.projects.map(p => [p.title, p.week.total])).toEqual([['hoelio', 10]])
   })
 
   test('charts produce bounded svg', async () => {
@@ -180,7 +177,7 @@ describe('pane', () => {
       expect(await ui.find({ type: 'Text', text: /Claude usage overview/ })).toBeDefined()
       if (surface === 'terminal') expect(await ui.find({ type: 'Text', text: /Created by WhiteFish/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /85% used/ })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: /this computer only/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /Claude Code tokens on this computer/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^Since / })).toBeDefined()
       for (const tab of ['tokens', 'projects', 'models', 'sessions', 'settings', 'overview']) {
         await ui.press({ key: `tab-${tab}` })
@@ -194,7 +191,15 @@ describe('pane', () => {
   test('shows sidebar group names on the projects tab', async ($, on) => {
     mock.clock(on, { now: NOW })
     mock.store(on)
-    const a = { ...richAgg(), cwdProjects: { '/x/TerraVitae': 'TerraVitae', '/x/ClearLoop': 'ClearLoop' } }
+    const srow = (name: string, project: string, week: number) => ({ name, project, session: bucket(0), today: bucket(0), week: bucket(week), fourteenDays: bucket(week), byModel: { 'claude-opus-5-5': week } })
+    const a = {
+      ...richAgg(),
+      sessions: [srow('c1', 'TerraVitae', 10), srow('c2', 'ClearLoop', 50)],
+      desktopSessions: [
+        { id: 's1', title: 'Terra Vitae - Build', cliIds: ['c1'], isArchived: false },
+        { id: 's2', title: '1.8.0', cliIds: ['c2'], isArchived: false },
+      ],
+    }
     on('fs.exists', () => ({ value: true }))
     on('fs.write', () => ({ value: undefined }) as never)
     on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(a), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -213,12 +218,13 @@ describe('pane', () => {
       expect(await ui.find({ type: 'Text', text: /^Clearloop$/ })).toBeDefined()
       expect(await ui.find({ key: 'group-toggle-Clearloop' })).toBeDefined()
       expect(await ui.find({ key: 'group-toggle-Other Stuff' })).toBeDefined()
-      expect(await ui.find({ key: 'p-ClearLoop' })).toBeDefined()
+      expect(await ui.find({ key: 'p-s2' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^Terra Vitae - Build$/ })).toBeDefined()
       await ui.press({ key: 'group-toggle-Clearloop' })
-      expect(await ui.find({ key: 'p-ClearLoop' })).toBeUndefined()
-      expect(await ui.find({ key: 'p-TerraVitae' })).toBeDefined()
+      expect(await ui.find({ key: 'p-s2' })).toBeUndefined()
+      expect(await ui.find({ key: 'p-s1' })).toBeDefined()
       await ui.press({ key: 'groups-expand' })
-      expect(await ui.find({ key: 'p-ClearLoop' })).toBeDefined()
+      expect(await ui.find({ key: 'p-s2' })).toBeDefined()
       await ui.unmount()
     }
   })
@@ -237,6 +243,7 @@ describe('pane', () => {
       expect(await ui.find({ key: 'tab-settings' })).toBeDefined()
       await ui.press({ key: 'tab-settings' })
       expect(await ui.find({ key: 'osNotify' })).toBeDefined()
+      expect(await ui.find({ key: 'close-dashboard' })).toBeDefined()
       expect(await ui.find({ type: 'Link' })).toBeDefined()
       await ui.press({ key: 'tab-overview' })
       await ui.unmount()

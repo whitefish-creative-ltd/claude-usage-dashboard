@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 — 2026-10-06
+
+- Projects now lists each project by its name in the Claude Desktop sidebar, under the group it's filed in there, so every session of the dashboard shows the same grouping. Terminal-only usage is listed by folder under "Terminal and other"
+- Settings → Close hides the dashboard, the bar above the prompt and the status line; `/usage-dashboard` brings them back
+- Fixed "Couldn't read local history" when several Claude sessions refreshed at the same moment
+- Shorter, plainer descriptions on every section
+
 ## 1.0.2 — 2026-10-06
 
 - Group names are bold blue headings again, with a Hide/Show control on the right instead of an arrow

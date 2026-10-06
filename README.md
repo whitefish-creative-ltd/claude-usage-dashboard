@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.0.2" src="https://img.shields.io/badge/version-1.0.2-0A4E75">
+  <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS" src="https://img.shields.io/badge/platform-macOS-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -41,7 +41,7 @@ Claude's plans have a 5-hour limit and a weekly limit, and it's easy to burn thr
 
 ### Token usage
 - Tokens per **hour** (last 24 hours) and per **day** (last 14 days), split by model.
-- **Projects** grouped the same way as your Claude Desktop sidebar, with collapsible groups. Sub-folders and worktrees roll up into their repository.
+- **Projects**: usage per project, titled and grouped exactly as in your Claude Desktop sidebar, with collapsible groups. Claude Code used from the terminal is listed per folder.
 - **Models** and **where Claude Code ran** (desktop app, terminal, SDK).
 - Totals **since the current session started** and **since the weekly reset**, plus a weekday × hour heat map of when you work.
 
@@ -97,6 +97,7 @@ A few things worth knowing:
 | Usage bar above the prompt | On | The slim bar with the **Dashboard** button (alerts still show when it's off) |
 | "Awaiting you" window | 12h | How recently an idle session must have been active to count as awaiting you |
 | Refresh every | 1 min | Also refreshes a few seconds after each Claude response |
+| Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard` |
 
 ## Requirements
 
@@ -124,7 +125,8 @@ To update automatically, open `/plugin` → **Marketplaces** → **whitefish-cre
 - **`/usage-dashboard` isn't listed:** start a new session or run `/reload-plugins`. Run `/plugin` and check the dashboard appears under installed plugins.
 - **No per-model limits or sessions:** open **Settings → App access** and press **Connect**. These need the Claude Desktop app.
 - **"Couldn't read local history":** make sure `python3` is installed (`xcode-select --install` provides one).
-- **Projects under "Not in the app":** those projects were only used from the terminal, or have no session in Claude Desktop to take a group from.
+- **Usage under "Terminal and other":** Claude Code used from the terminal, or from a desktop session that has since been deleted, listed by folder.
+- **Hiding it:** Settings → **Close** hides the dashboard, the bar above the prompt and the status line. `/usage-dashboard` brings it back.
 
 ## Development
 
