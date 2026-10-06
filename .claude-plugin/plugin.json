@@ -8,5 +8,6 @@
     "url": "https://whitefishcreative.co.uk/"
   },
   "homepage": "https://whitefishcreative.co.uk/",
-  "repository": "https://github.com/whitefish-creative-ltd/claude-usage-dashboard"
+  "repository": "https://github.com/whitefish-creative-ltd/claude-usage-dashboard",
+  "icon": "./.claude-plugin/icon.png"
 }
