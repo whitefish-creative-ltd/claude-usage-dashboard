@@ -634,7 +634,6 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           'Warning levels for the session, daily and weekly limits.',
           field('Amber at', 'First warning.', pick('amber', settings.amber, [50, 60, 70, 75, 80, 85], n => `${n}%`, v => act.saveSettings({ amber: v }))),
           field('Red at', 'Must be above amber.', pick('red', settings.red, [70, 80, 85, 90, 95, 100], n => `${n}%`, v => act.saveSettings({ red: v }))),
-          field('Status line', 'Shows 5h · day · week at a glance.', <Button key="statusLine" label={settings.statusLine ? 'On' : 'Off'} onPress={() => act.saveSettings({ statusLine: !settings.statusLine })} />),
           field('Usage bar above the prompt', 'Live figures and a button that opens this dashboard, with no tokens used.', <Button key="showBand" label={settings.showBand ? 'On' : 'Off'} onPress={() => act.saveSettings({ showBand: !settings.showBand })} />),
           field('Re-arm alerts', 'Alert again for levels already reached.', <Button key="reset-alerts" label="Re-arm" onPress={() => act.rearm()} />),
         )}
@@ -664,7 +663,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         {section(
           'Dashboard',
           null,
-          field('Close the dashboard', 'Hides the dashboard, the bar above the prompt and the status line. Open it again with /usage-dashboard-wfc.', <Button key="close-dashboard" label="Close" onPress={() => act.close()} />),
+          field('Close the dashboard', 'Hides the dashboard and the bar above the prompt. Open it again with /usage-dashboard-wfc.', <Button key="close-dashboard" label="Close" onPress={() => act.close()} />),
         )}
         {section(
           'About',

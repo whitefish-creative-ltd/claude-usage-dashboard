@@ -393,7 +393,7 @@ describe('pane', () => {
       })
       expect(await ui.find({ key: 'tab-settings' })).toBeDefined()
       await ui.press({ key: 'tab-settings' })
-      expect(await ui.find({ key: 'statusLine' })).toBeDefined()
+      expect(await ui.find({ key: 'statusLine' })).toBeUndefined()
       expect(await ui.find({ key: 'close-dashboard' })).toBeDefined()
       expect(await ui.find({ key: 'refreshOnResponse' })).toBeDefined()
       await ui.press({ key: 'tab-overview' })

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.2 — 2026-10-06
+
+- Removed the status-line summary under the prompt box (and its setting); the bar above the prompt and the dashboard show the same figures
+
 ## 1.7.1 — 2026-10-06
 
 - Fixed the daily budget jumping between two values (e.g. 77% ↔ 84%): when the app's usage reading dropped out for a moment, the dashboard used this session's own reading, which can lag a point behind. It now uses the app's last reading (if under 15 minutes old), and a fallback never shows less than the app last said for the same week

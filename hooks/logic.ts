@@ -10,7 +10,6 @@ export const DEFAULT_SETTINGS: Settings = {
   awaitingHours: 12,
   refreshSeconds: 60,
   refreshOnResponse: true,
-  statusLine: true,
   showBand: true,
   isClosed: false,
   appAccess: true,

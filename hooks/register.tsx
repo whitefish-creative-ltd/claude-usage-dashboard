@@ -514,14 +514,6 @@ async function checkAlerts($: $T, settings: Settings, plan: Plan | null, agg: Ag
     }
   }
   if (changed) await $.store.set('alerts', sent)
-
-  if (settings.statusLine && !settings.isClosed) {
-    const dot = (l: Level) => (l === 'red' ? '🔴 ' : l === 'amber' ? '🟠 ' : '')
-    const parts = list.filter(r => ['five', 'day', 'week'].includes(r.id)).map(r => `${dot(levelOf(r.pct, settings))}${r.id === 'five' ? '5h' : r.id === 'day' ? 'day' : 'wk'} ${fmtPct(r.pct)}`)
-    $.ui.status(parts.length ? parts.join(' · ') : undefined)
-  } else {
-    $.ui.status(undefined)
-  }
 }
 
 async function restartTimer($: $T) {
@@ -562,7 +554,6 @@ async function openDashboard($: $T) {
 
 async function closeDashboard($: $T) {
   await saveSettings($, { isClosed: true })
-  $.ui.status(undefined)
   await $.ui.close({ id: PANE })
 }
 

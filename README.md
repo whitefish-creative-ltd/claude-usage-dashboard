@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.7.1" src="https://img.shields.io/badge/version-1.7.1-0A4E75">
+  <img alt="Version 1.7.2" src="https://img.shields.io/badge/version-1.7.2-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS, Windows and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -31,7 +31,7 @@ Claude's plans have a 5-hour limit and a weekly limit, and it's easy to burn thr
 
 ### Plan usage limits
 - **Current session** (5-hour window), **this week**, and any **per-model weekly limits**, with reset times — for your whole account, every device included.
-- **Amber and red alerts** (80% and 90% by default) as in-app pop-ups, a warning bar above the prompt and a status-line summary. Each alert fires once per limit period.
+- **Amber and red alerts** (80% and 90% by default) as in-app pop-ups and a warning bar above the prompt. Each alert fires once per limit period.
 
 ### Daily budget
 - Your weekly limit split evenly across the days you work: with 5 working days, each day gets **20%** of the week.
@@ -92,13 +92,12 @@ A few things worth knowing:
 | --- | --- | --- |
 | Working days | 5 | How many budget days, counted from your weekly reset, share the weekly limit |
 | Amber at / Red at | 80% / 90% | Alert levels for the 5-hour window, today's budget and the weekly limits |
-| Status line | On | Shows `5h · day · wk` in the status line |
 | Usage bar above the prompt | On | The slim bar with the **Dashboard** button (alerts still show when it's off) |
 | Recent sessions | 12h | How far back the Sessions tab lists closed sessions |
 | Refresh every | 1 minute | How often the figures update: 30 seconds to 30 minutes, or Manual (only when you press Refresh or open the dashboard) |
 | After each response | On | Also updates a few seconds after each Claude reply |
 | App access | Connected | Shows whether the dashboard reads plan limits and your session list from the Claude app. **Disconnect** stops it calling the app's tools; **Connect** turns them back on |
-| Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard-wfc` |
+| Close the dashboard | — | Hides the dashboard and the bar until you run `/usage-dashboard-wfc` |
 
 ## Requirements
 
@@ -155,7 +154,7 @@ To update automatically, open `/plugin` → **Marketplaces** → **whitefish-cre
 - **No per-model limits or sessions:** open **Settings → App access** and press **Connect**. These need the Claude Desktop app.
 - **"Reading your history…":** the first scan works through the last 15 days of history over a few refreshes; figures fill in as it goes.
 - **Usage under "Terminal and other":** Claude Code used from the terminal, or from a desktop session that has since been deleted, listed by folder.
-- **Hiding it:** Settings → **Close** hides the dashboard, the bar above the prompt and the status line. `/usage-dashboard-wfc` brings it back.
+- **Hiding it:** Settings → **Close** hides the dashboard and the bar above the prompt. `/usage-dashboard-wfc` brings it back.
 
 ## Development
 

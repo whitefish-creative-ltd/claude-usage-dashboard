@@ -117,12 +117,11 @@ export type Settings = {
   refreshSeconds: number
   /** Refresh a few seconds after each Claude response. */
   refreshOnResponse: boolean
-  statusLine: boolean
   /** The slim usage bar above the prompt, with a button that opens the dashboard. */
   showBand: boolean
   /** Use the Claude Desktop app's tools (plan limits per model, session titles and groups). */
   appAccess: boolean
-  /** Closed from Settings: no pane, bar or status line until /usage-dashboard-wfc opens it again. */
+  /** Closed from Settings: no pane or bar until /usage-dashboard-wfc opens it again. */
   isClosed: boolean
 }
 
