@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-10-06
+
+- Project groups use the names exactly as they appear in the Claude Desktop sidebar, not in capitals
+- Groups follow the sidebar's order
+- Each project is filed under the group of its most recently active session, so moving a session to a new group moves its project too
+
 ## 1.0.0 — 2026-10-06
 
 First release.

@@ -458,14 +458,14 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     const rows = agg.projects.filter(p => p.fourteenDays.total > 0)
     const max = Math.max(0, ...rows.map(p => p.week.total))
     const sessionRows = sessions?.status === 'ok' ? sessions.rows : []
-    const groups = groupProjects(rows, sessionRows, agg.cwdProjects ?? {})
+    const groups = groupProjects(rows, sessionRows, agg.cwdProjects ?? {}, sessions?.groupOrder)
     const projectRow = (p: (typeof rows)[number]) =>
       rankRow(`p-${p.name}`, p.name, `Current session ${fmtTokens(p.session.total)} · today ${fmtTokens(p.today.total)}`, p.week.total, max, '#3987e5', agg.models.map(m => ({ value: p.byModel[m.name] ?? 0, color: color(m.name) })))
     body = (
       <Box flexDirection="column">
         {section(
           'Projects',
-          `Grouped as in the sidebar. ${sinceWeek} · ${localNote}`,
+          `Grouped as in the sidebar, by each project's most recent session. ${sinceWeek} · ${localNote}`,
           rows.length === 0 ? <Text dimColor>No Claude Code usage in the last 14 days.</Text> : legend(modelLegend()),
           needsAccess ? (
             <Box flexDirection="row" gap={2} alignItems="center">
@@ -487,7 +487,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
             <Box key={`group-${g.name}`} flexDirection="column" marginTop={2}>
               {Svg ? <Svg source={rule()} alt="" /> : <Text dimColor>{'─'.repeat(Math.max(10, Math.min(60, cols - 4)))}</Text>}
               <Box flexDirection="row" justifyContent="space-between" alignItems="center" marginTop={1} marginBottom={isOpen ? 1 : 0}>
-                <Button key={`group-toggle-${g.name}`} plain label={`${isOpen ? '▾' : '▸'} ${g.name.toUpperCase()}`} onPress={toggle} />
+                <Button key={`group-toggle-${g.name}`} plain label={`${isOpen ? '▾' : '▸'} ${g.name}`} onPress={toggle} />
                 <Text dimColor>
                   {g.projects.length} project{g.projects.length === 1 ? '' : 's'} · {fmtTokens(g.week)} this week
                 </Text>

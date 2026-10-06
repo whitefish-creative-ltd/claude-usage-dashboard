@@ -75,6 +75,8 @@ export type SessionRow = {
 export type Sessions = {
   status: 'ok' | 'needs-access' | 'unavailable'
   rows: SessionRow[]
+  /** The sidebar's custom groups, in sidebar order (absent when the app didn't say). */
+  groupOrder?: string[]
   note?: string
   at: number
 }

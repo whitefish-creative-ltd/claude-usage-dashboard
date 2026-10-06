@@ -111,22 +111,25 @@ describe('logic', () => {
     expect(prettyModel('claude-opus-5')).toBe('Opus 5')
   })
 
-  test('groups projects by the sidebar group most of their sessions use', async () => {
+  test('files each project under the group of its most recent session, in sidebar order', async () => {
     const proj = (name: string, week: number) => ({ name, week: bucket(week), fourteenDays: bucket(week) })
-    const sess = (cwd: string, group: string | undefined, at: string) => ({ sessionId: cwd + at, title: 't', cwd, isRunning: false, isArchived: false, lastActivityAt: at, remoteControlActive: false, group })
+    const sess = (cwd: string, group: string | undefined, at: string, isArchived = false) => ({ sessionId: cwd + at, title: 't', cwd, isRunning: false, isArchived, lastActivityAt: at, remoteControlActive: false, group })
     const groups = groupProjects(
-      [proj('A', 10), proj('B', 50), proj('C', 5), proj('D', 1)],
+      [proj('A', 10), proj('B', 50), proj('C', 5), proj('D', 1), proj('E', 2)],
       [
-        sess('/a', 'Clients', '2026-10-01T00:00:00Z'),
-        sess('/a/site', 'Clients', '2026-10-02T00:00:00Z'),
-        sess('/a', 'Other', '2026-10-05T00:00:00Z'),
+        sess('/a', 'Other', '2026-10-01T00:00:00Z'),
+        sess('/a/site', 'Other', '2026-10-02T00:00:00Z'),
+        sess('/a', 'Terra', '2026-10-05T00:00:00Z'), // most recent: A moves to Terra
         sess('/b', 'Other', '2026-10-01T00:00:00Z'),
         sess('/c', undefined, '2026-10-01T00:00:00Z'),
+        sess('/e', 'Terra', '2026-10-01T00:00:00Z'),
+        sess('/e', undefined, '2026-10-09T00:00:00Z', true), // archived: ignored while a live one exists
       ],
-      { '/a': 'A', '/a/site': 'A', '/b': 'B', '/c': 'C' },
+      { '/a': 'A', '/a/site': 'A', '/b': 'B', '/c': 'C', '/e': 'E' },
+      ['Terra', 'Other'],
     )
-    expect(groups.map(g => g.name)).toEqual(['Other', 'Clients', UNGROUPED, NO_SESSION])
-    expect(groups[1]?.projects.map(p => p.name)).toEqual(['A'])
+    expect(groups.map(g => g.name)).toEqual(['Terra', 'Other', UNGROUPED, NO_SESSION])
+    expect(groups[0]?.projects.map(p => p.name)).toEqual(['A', 'E'])
     expect(groups[3]?.projects.map(p => p.name)).toEqual(['D'])
   })
 

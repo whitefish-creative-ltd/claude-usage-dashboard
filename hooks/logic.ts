@@ -268,38 +268,39 @@ export const NO_SESSION = 'Not in the app'
 export type ProjectGroup<P> = { name: string; projects: P[]; week: number; fourteenDays: number }
 
 /**
- * Files each project under the sidebar group its sessions belong to (the group
- * most of its sessions are in; the most recent one breaks a tie). Projects with no
- * session in the app (terminal-only, or older than the list) go last.
+ * Files each project under the sidebar group of its most recently active session
+ * (an archived session counts only when the project has no other). Groups follow
+ * the sidebar's order when it's known; projects with no session in the app go last.
  */
 export function groupProjects<P extends { name: string; week: { total: number }; fourteenDays: { total: number } }>(
   projects: P[],
   sessions: SessionRow[],
   cwdProjects: Record<string, string>,
+  groupOrder: string[] = [],
 ): ProjectGroup<P>[] {
-  const votes = new Map<string, Map<string, { n: number; last: number }>>()
+  const latest = new Map<string, { group: string; rank: number }>()
   for (const s of sessions) {
     const project = cwdProjects[s.cwd]
     if (!project) continue
-    const group = s.group ?? UNGROUPED
-    const byGroup = votes.get(project) ?? new Map<string, { n: number; last: number }>()
-    const v = byGroup.get(group) ?? { n: 0, last: 0 }
-    byGroup.set(group, { n: v.n + 1, last: Math.max(v.last, Date.parse(s.lastActivityAt) || 0) })
-    votes.set(project, byGroup)
+    // Live sessions outrank archived ones; then the most recent wins.
+    const rank = (s.isArchived ? 0 : 1e15) + (Date.parse(s.lastActivityAt) || 0)
+    const cur = latest.get(project)
+    if (!cur || rank > cur.rank) latest.set(project, { group: s.group ?? UNGROUPED, rank })
   }
   const groups = new Map<string, ProjectGroup<P>>()
   for (const p of projects) {
-    const byGroup = votes.get(p.name)
-    let name = NO_SESSION
-    if (byGroup) {
-      name = [...byGroup.entries()].sort((a, b) => b[1].n - a[1].n || b[1].last - a[1].last)[0]?.[0] ?? NO_SESSION
-    }
+    const name = latest.get(p.name)?.group ?? NO_SESSION
     const g = groups.get(name) ?? { name, projects: [], week: 0, fourteenDays: 0 }
     g.projects.push(p)
     g.week += p.week.total
     g.fourteenDays += p.fourteenDays.total
     groups.set(name, g)
   }
-  const rank = (g: ProjectGroup<P>) => (g.name === NO_SESSION ? 2 : g.name === UNGROUPED ? 1 : 0)
-  return [...groups.values()].sort((a, b) => rank(a) - rank(b) || b.week - a.week || b.fourteenDays - a.fourteenDays)
+  const place = (g: ProjectGroup<P>) => {
+    if (g.name === NO_SESSION) return 1e6 + 1
+    if (g.name === UNGROUPED) return 1e6
+    const i = groupOrder.indexOf(g.name)
+    return i === -1 ? 1e5 : i
+  }
+  return [...groups.values()].sort((a, b) => place(a) - place(b) || b.week - a.week || b.fourteenDays - a.fourteenDays)
 }

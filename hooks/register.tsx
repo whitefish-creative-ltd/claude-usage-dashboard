@@ -27,6 +27,7 @@ import type { Level } from './logic'
 const PANE = 'token-dashboard'
 const USAGE_TOOL = 'mcp__ccd_session_mgmt__get_usage'
 const SESSIONS_TOOL = 'mcp__ccd_session_mgmt__list_sessions'
+const GROUPS_TOOL = 'mcp__ccd_sidebar__list_groups'
 
 const aggA = atom({ plugin: 'token-dashboard', key: 'agg' } as const, null)
 const aggErrorA = atom({ plugin: 'token-dashboard', key: 'aggError' } as const, null)
@@ -120,7 +121,18 @@ async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions>
       at: now,
     }
   }
-  return { status: 'ok', rows: parseSessions(r.text) ?? [], at: now }
+  // The sidebar's group order; best effort, the list works without it.
+  let groupOrder: string[] | undefined
+  const g = await appTool($, GROUPS_TOOL, {}, ask)
+  if (g.text) {
+    try {
+      const list = JSON.parse(g.text) as { name?: string; order?: number }[]
+      groupOrder = [...list].sort((x, y) => (x.order ?? 0) - (y.order ?? 0)).map(x => x.name ?? '').filter(Boolean)
+    } catch {
+      groupOrder = undefined
+    }
+  }
+  return { status: 'ok', rows: parseSessions(r.text) ?? [], groupOrder, at: now }
 }
 
 async function loadAggregate($: $T, plan: Plan | null, cwds: string[]): Promise<{ agg?: Aggregate; error?: string }> {
