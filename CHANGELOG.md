@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.0 — 2026-10-06
+
+- Sessions tab shows which sessions are open from Claude Code's own live status: **Working now** (Claude is replying) and **Waiting for you**, then Remote Control and **Recent** closed sessions. The app's own "running" flag missed sessions that were working
+- Works without app access too: open sessions show even before you press Connect
+
 ## 1.4.1 — 2026-10-06
 
 - Plan limits no longer go blank when the app can't read them for a moment: the dashboard uses this session's own reading, or the last good one with its age

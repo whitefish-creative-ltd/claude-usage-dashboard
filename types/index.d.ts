@@ -80,9 +80,24 @@ export type SessionRow = {
   group?: string
 }
 
+/** An open Claude Code session, from its live status file in ~/.claude/sessions. */
+export type LiveSession = {
+  sessionId: string
+  /** The Claude Desktop session it belongs to, when it runs in the app. */
+  hostSessionId?: string
+  name?: string
+  /** `busy` while Claude is working, `idle` while it waits for you. */
+  status: string
+  cwd: string
+  entrypoint?: string
+  updatedAt: number
+}
+
 export type Sessions = {
   status: 'ok' | 'needs-access' | 'unavailable'
   rows: SessionRow[]
+  /** Sessions open on this computer right now. */
+  live?: LiveSession[]
   /** The sidebar's custom groups, in sidebar order (absent when the app didn't say). */
   groupOrder?: string[]
   note?: string

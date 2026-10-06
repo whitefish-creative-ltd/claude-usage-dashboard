@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.4.1" src="https://img.shields.io/badge/version-1.4.1-0A4E75">
+  <img alt="Version 1.5.0" src="https://img.shields.io/badge/version-1.5.0-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS, Windows and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -46,7 +46,7 @@ Claude's plans have a 5-hour limit and a weekly limit, and it's easy to burn thr
 - Totals **since the current session started** and **since the weekly reset**, plus a weekday × hour heat map of when you work.
 
 ### Sessions
-- Sessions **running**, **awaiting you**, and served over **Remote Control**.
+- Open sessions **working now** and **waiting for you**, sessions served over **Remote Control**, and **recent** sessions.
 
 ### Always to hand
 - A slim bar above the prompt: `Session 6% · Daily budget 12% · Week 2%`, with a **Dashboard** button.
@@ -94,7 +94,7 @@ A few things worth knowing:
 | Amber at / Red at | 80% / 90% | Alert levels for the 5-hour window, today's budget and the weekly limits |
 | Status line | On | Shows `5h · day · wk` in the status line |
 | Usage bar above the prompt | On | The slim bar with the **Dashboard** button (alerts still show when it's off) |
-| "Awaiting you" window | 12h | How recently an idle session must have been active to count as awaiting you |
+| Recent sessions | 12h | How far back the Sessions tab lists closed sessions |
 | Refresh every | 1 minute | How often the figures update: 30 seconds to 30 minutes, or Manual (only when you press Refresh or open the dashboard) |
 | After each response | On | Also updates a few seconds after each Claude reply |
 | Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard-wfc` |
@@ -115,6 +115,7 @@ Everything stays on your computer. Nothing is sent anywhere: the dashboard makes
 **Files it reads** (read-only; it never changes them)
 - Claude Code's history: the `.jsonl` files in `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`), including each session's `subagents/` folder, from the last 15 days. The plugin can only read whole files, so it reads your conversations in passing, but it keeps only the usage figures on each reply: model, token counts, time, working folder and session id. History files over 400 MB are skipped.
 - Claude Desktop's session records: `claude-code-sessions/*/*/local_*.json` in the Claude app's data folder (`~/Library/Application Support/Claude` on macOS, `%APPDATA%\Claude` on Windows, `~/.config/Claude` on Linux), for each session's sidebar title and the history it belongs to.
+- Claude Code's live session files: the numbered `.json` files in `~/.claude/sessions/`, which say which sessions are open and whether Claude is working or waiting for you. The `.key` files beside them are never read.
 - Whether a working folder's parents contain a `.git` entry, to name projects after their repository.
 - Its own `.claude-plugin/plugin.json` and `CHANGELOG.md`, for the version and release date shown in Settings.
 - The environment variables `HOME`, `USERPROFILE`, `APPDATA` and `CLAUDE_CONFIG_DIR`, to find those folders.

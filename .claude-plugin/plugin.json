@@ -1,7 +1,7 @@
 {
   "name": "whitefish-usage-dashboard",
   "displayName": "WhiteFish Usage Dashboard",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Claude usage overview: plan limits, daily budget, alerts, and token usage by hour, day, project and model. Works on macOS, Windows and Linux.",
   "types": "./types/index.d.ts",
   "author": {

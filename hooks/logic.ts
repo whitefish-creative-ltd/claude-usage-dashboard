@@ -1,4 +1,4 @@
-import type { Aggregate, Plan, PlanWindow, SessionRow, Settings, Snapshot, TokenBucket } from '../types'
+import type { Aggregate, LiveSession, Plan, PlanWindow, SessionRow, Settings, Snapshot, TokenBucket } from '../types'
 
 export const DAY = 86_400_000
 export const HOUR = 3_600_000
@@ -161,12 +161,38 @@ export function parseSessions(text: string): SessionRow[] | null {
   }))
 }
 
-export function splitSessions(rows: SessionRow[], s: Settings, now: number) {
-  const live = rows.filter(r => !r.isArchived)
-  const processing = live.filter(r => r.isRunning)
-  const awaiting = live.filter(r => !r.isRunning && now - Date.parse(r.lastActivityAt) <= s.awaitingHours * HOUR)
-  const remote = live.filter(r => r.remoteControlActive)
-  return { processing, awaiting, remote }
+export type SessionView = SessionRow & { state?: 'working' | 'waiting' }
+
+/**
+ * Sessions by what they're doing: open sessions from Claude Code's live status
+ * files (working on a reply, or waiting for you), sessions served over Remote
+ * Control, and recently active sessions that are closed.
+ */
+export function splitSessions(rows: SessionRow[], live: LiveSession[], s: Settings, now: number) {
+  const byId = new Map(rows.map(r => [r.sessionId, r]))
+  const open = live.map((l): SessionView => {
+    const row = l.hostSessionId ? byId.get(l.hostSessionId) : undefined
+    const state = l.status === 'busy' ? 'working' : 'waiting'
+    if (row) return { ...row, state }
+    const folder = l.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? l.cwd
+    return {
+      sessionId: l.hostSessionId ?? l.sessionId,
+      title: l.name || folder,
+      cwd: l.cwd,
+      isRunning: state === 'working',
+      isArchived: false,
+      lastActivityAt: new Date(l.updatedAt).toISOString(),
+      remoteControlActive: false,
+      group: l.entrypoint === 'cli' ? 'Terminal' : undefined,
+      state,
+    }
+  })
+  const openIds = new Set(open.map(o => o.sessionId))
+  const working = open.filter(o => o.state === 'working')
+  const waiting = open.filter(o => o.state === 'waiting')
+  const remote = rows.filter(r => r.remoteControlActive && !r.isArchived)
+  const recent = rows.filter(r => !r.isArchived && !openIds.has(r.sessionId) && now - Date.parse(r.lastActivityAt) <= s.awaitingHours * HOUR)
+  return { working, waiting, remote, recent }
 }
 
 // ---------- daily budget ----------

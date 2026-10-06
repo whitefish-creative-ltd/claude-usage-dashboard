@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Aggregate, Plan, Sessions, Settings, Snapshot } from '../types'
+import type { Aggregate, LiveSession, Plan, Sessions, Settings, Snapshot } from '../types'
 import { KEEP_DAYS, SCAN_VERSION, emptyScan, ingest, projectCandidates, projectName, prune, summarize } from './scanner'
 import type { FileState, ScanState } from './scanner'
 import { drawPane } from './pane'
@@ -153,11 +153,36 @@ async function loadPlan($: $T, ask: boolean, now: number): Promise<{ plan: Plan;
   return { plan: app ?? own, needsAccess: r.status === 'needs-access' }
 }
 
+/** Sessions open on this computer: Claude Code's live status files (never the .key files beside them). */
+async function loadLive($: $T): Promise<LiveSession[]> {
+  const { sessionsDir } = await locations($)
+  const out: LiveSession[] = []
+  let entries: Awaited<ReturnType<typeof $.fs.list>> = []
+  try {
+    entries = await $.fs.list(sessionsDir)
+  } catch {
+    return out
+  }
+  for (const e of entries) {
+    if (e.kind !== 'file' || !/^\d+\.json$/.test(e.name)) continue
+    try {
+      const d = JSON.parse(await $.fs.read(`${sessionsDir}/${e.name}`)) as Partial<LiveSession> & { kind?: string }
+      if (!d.sessionId || d.kind === 'background') continue
+      out.push({ sessionId: d.sessionId, hostSessionId: d.hostSessionId, name: d.name, status: d.status ?? 'idle', cwd: d.cwd ?? '', entrypoint: d.entrypoint, updatedAt: d.updatedAt ?? e.mtimeMs })
+    } catch {
+      // being written: next refresh
+    }
+  }
+  return out
+}
+
 async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions> {
+  const live = await loadLive($)
   const r = await callListSessions($, ask)
   if (r.status !== 'ok' || !r.text) {
     return {
       status: r.status === 'needs-access' ? 'needs-access' : 'unavailable',
+      live,
       rows: [],
       note: r.status === 'needs-access' ? 'Allow the dashboard to read your session list.' : 'Session list is only available in the Claude desktop app.',
       at: now,
@@ -182,7 +207,7 @@ async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions>
     const me = parseSessions(`[${self.text}]`)?.[0]
     if (me?.sessionId && !rows.some(x => x.sessionId === me.sessionId)) rows.unshift(me)
   }
-  return { status: 'ok', rows, groupOrder, at: now }
+  return { status: 'ok', rows, live, groupOrder, at: now }
 }
 
 /** Where Claude Code and the Claude Desktop app keep their files on this computer. */
@@ -195,7 +220,7 @@ async function locations($: $T) {
     ...(appData ? [`${appData}/Claude/claude-code-sessions`] : []),
     `${home}/.config/Claude/claude-code-sessions`,
   ]
-  return { projects: `${configDir}/projects`, desktopDirs }
+  return { projects: `${configDir}/projects`, sessionsDir: `${configDir}/sessions`, desktopDirs }
 }
 
 async function listJsonl($: $T, dir: string): Promise<{ path: string; size: number; mtime: number }[]> {

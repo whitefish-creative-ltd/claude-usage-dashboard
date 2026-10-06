@@ -1,6 +1,6 @@
 import type { ElementTable } from 'claude-code'
 
-import type { Aggregate, Plan, Sessions, SessionRow, Settings, Snapshot, Tab } from '../types'
+import type { Aggregate, Plan, Sessions, Settings, Snapshot, Tab } from '../types'
 import { area, bars, donut, heatmap, line, meter, rule, segMeter, smallText, textBar } from './charts'
 import {
   DAY,
@@ -22,7 +22,7 @@ import {
   splitSessions,
   todayVsBudget,
 } from './logic'
-import type { Level } from './logic'
+import type { Level, SessionView } from './logic'
 
 /** Readable on both light and dark surfaces, so nothing depends on knowing the theme. */
 const WEBSITE = 'https://whitefishcreative.co.uk/'
@@ -328,7 +328,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
 
   let body: unknown
   if (tab === 'overview') {
-    const split = sessions?.status === 'ok' ? splitSessions(sessions.rows, settings, now) : null
+    const split = sessions ? splitSessions(sessions.rows, sessions.live ?? [], settings, now) : null
     body = (
       <Box flexDirection="column">
         {limits}
@@ -341,7 +341,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
               {stat('Current session', fmtCount(agg.totals.session.total), sinceSession)}
               {stat('Today', fmtCount(agg.totals.today.total), `${agg.totals.today.messages} responses`)}
               {stat('This week', fmtCount(agg.totals.week.total), sinceWeek)}
-              {split ? stat('Sessions', `${split.processing.length} running`, `${split.awaiting.length} awaiting you`) : null}
+              {split ? stat('Sessions', `${split.working.length} working`, `${split.waiting.length} waiting for you`) : null}
             </Box>,
           )}
         {agg &&
@@ -549,38 +549,39 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
       </Box>
     )
   } else if (tab === 'sessions') {
-    const split = sessions?.status === 'ok' ? splitSessions(sessions.rows, settings, now) : null
-    const list = (title: string, rows: SessionRow[], empty: string) =>
+    const split = sessions ? splitSessions(sessions.rows, sessions.live ?? [], settings, now) : null
+    const list = (title: string, rows: SessionView[], empty: string) =>
       section(
         `${title} · ${rows.length}`,
         null,
         rows.length === 0 ? <Text dimColor>{empty}</Text> : null,
         ...rows.slice(0, 25).map(r => (
-          <Box key={`${title}-${r.sessionId}`} flexDirection="row" alignItems="center" justifyContent="space-between" gap={2} marginBottom={1}>
-            <Box flexDirection="column" flexShrink={1}>
-              <Text wrap="truncate-end">
-                {r.title}
-                {r.remoteControlActive ? '  · Remote Control' : ''}
-              </Text>
-              <Text dimColor wrap="truncate-end">
-                {r.cwd.split('/').pop()} · {r.group ?? 'Ungrouped'} · {relTime(Date.parse(r.lastActivityAt), now)}
-              </Text>
-            </Box>
+          <Box key={`${title}-${r.sessionId}`} flexDirection="column" marginBottom={1}>
+            <Text wrap="truncate-end">
+              {r.title}
+              {r.remoteControlActive ? '  · Remote Control' : ''}
+            </Text>
+            <Text dimColor wrap="truncate-end">
+              {r.cwd.split(/[\\/]/).pop()} · {r.group ?? 'Ungrouped'} · {relTime(Date.parse(r.lastActivityAt), now)}
+            </Text>
           </Box>
         )),
       )
     body = split ? (
       <Box flexDirection="column">
-        {list('Running', split.processing, 'Nothing running right now.')}
-        {list('Awaiting you', split.awaiting, `No idle sessions from the last ${settings.awaitingHours}h.`)}
+        {list('Working now', split.working, 'Claude isn’t working on anything right now.')}
+        {list('Waiting for you', split.waiting, 'No open sessions are waiting for you.')}
         {list('Remote Control', split.remote, 'No sessions are served over Remote Control.')}
+        {sessions?.status === 'ok' ? list('Recent', split.recent, `No other sessions in the last ${settings.awaitingHours}h.`) : null}
+        {needsAccess ? (
+          <Box flexDirection="row" gap={2} alignItems="center">
+            <Text dimColor>Connect to add titles, groups, Remote Control and recent sessions.</Text>
+            <Button key="connect" label="Connect" variant="primary" onPress={() => act.refresh(true)} />
+          </Box>
+        ) : null}
       </Box>
     ) : (
-      section(
-        'Sessions',
-        sessions?.note ?? 'Loading…',
-        needsAccess ? <Button key="connect" label="Connect" variant="primary" onPress={() => act.refresh(true)} /> : null,
-      )
+      section('Sessions', 'Loading…')
     )
   } else if (tab === 'settings') {
     const pick = (key: string, value: number, values: number[], fmt: (n: number) => string, onSelect: (v: number) => void) =>
@@ -635,7 +636,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         {section(
           'Data',
           null,
-          field('“Awaiting you” window', 'Idle sessions active within this time.', pick('awaiting', settings.awaitingHours, [1, 4, 12, 24, 72], n => `${n}h`, v => act.saveSettings({ awaitingHours: v }))),
+          field('Recent sessions', 'Closed sessions active within this time.', pick('awaiting', settings.awaitingHours, [1, 4, 12, 24, 72], n => `${n}h`, v => act.saveSettings({ awaitingHours: v }))),
           field('App access', 'Plan limits per model and your session list.', <Button key="connect" label="Connect" onPress={() => act.refresh(true)} />),
         )}
         {section(

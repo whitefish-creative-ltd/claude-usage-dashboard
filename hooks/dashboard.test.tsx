@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Aggregate, Plan, Snapshot } from '../types'
 import { bars } from './charts'
 import { emptyScan, ingest, projectCandidates, projectName, summarize } from './scanner'
-import { DAY, DEFAULT_SETTINGS, NO_SESSION, allowanceAt, allowanceSteps, assignColors, groupSessionUsage, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
+import { DAY, DEFAULT_SETTINGS, NO_SESSION, allowanceAt, allowanceSteps, assignColors, groupSessionUsage, splitSessions, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 const TODAY = Date.parse('2026-10-06T00:00:00Z')
@@ -131,6 +131,24 @@ describe('logic', () => {
     expect(groups[2]?.projects.map(p => [p.title, p.week.total])).toEqual([['hoelio', 10]])
   })
 
+  test('splits sessions into working, waiting, Remote Control and recent', async () => {
+    const row = (id: string, at: string, rc = false) => ({ sessionId: id, title: id, cwd: '/x', isRunning: false, isArchived: false, lastActivityAt: at, remoteControlActive: rc, group: 'G' })
+    const split = splitSessions(
+      [row('d1', '2026-10-06T11:00:00Z'), row('d2', '2026-10-06T10:00:00Z', true), row('d3', '2026-10-06T09:00:00Z'), row('d4', '2026-09-01T00:00:00Z')],
+      [
+        { sessionId: 'c1', hostSessionId: 'd1', status: 'busy', cwd: '/x', updatedAt: NOW },
+        { sessionId: 'c2', hostSessionId: 'd2', status: 'idle', cwd: '/x', updatedAt: NOW },
+        { sessionId: 'c9', status: 'idle', cwd: '/y/Scratch', entrypoint: 'cli', updatedAt: NOW },
+      ],
+      DEFAULT_SETTINGS,
+      NOW,
+    )
+    expect(split.working.map(r => r.title)).toEqual(['d1'])
+    expect(split.waiting.map(r => r.title)).toEqual(['d2', 'Scratch'])
+    expect(split.remote.map(r => r.title)).toEqual(['d2'])
+    expect(split.recent.map(r => r.title)).toEqual(['d3']) // d4 is older than the window
+  })
+
   test('charts produce bounded svg', async () => {
     const s = bars({ columns: [[1], [2, 3]], colors: ['#000', '#111'], ref: 2 })
     expect(s.includes('<text')).toBe(false)
@@ -162,6 +180,7 @@ const HISTORY = [
 ].join('\n') + '\n'
 
 type On = Parameters<Parameters<typeof test>[1]>[1]
+const keyReads: string[] = []
 
 function fakeComputer(on: On) {
   mock.clock(on, { now: NOW })
@@ -174,14 +193,18 @@ function fakeComputer(on: On) {
     [DESKTOP]: [entry('acct', 'dir')],
     [`${DESKTOP}/acct`]: [entry('org', 'dir')],
     [`${DESKTOP}/acct/org`]: [entry('local_s1.json', 'file', 100), entry('local_s2.json', 'file', 100)],
+    [`${HOME}/.claude/sessions`]: [entry('123.json', 'file', 100), entry('123.abcdef.key', 'file', 100), entry('456.json', 'file', 100)],
   }
   const files: Record<string, string> = {
     [`${PROJECTS}/-x-TerraVitae/c1.jsonl`]: HISTORY,
     [`${DESKTOP}/acct/org/local_s1.json`]: JSON.stringify({ sessionId: 's1', title: 'Terra Vitae - Build', cliSessionId: 'c1' }),
     [`${DESKTOP}/acct/org/local_s2.json`]: JSON.stringify({ sessionId: 's2', title: '1.8.0', cliSessionId: 'c2', priorCliSessionIds: [] }),
+    [`${HOME}/.claude/sessions/123.json`]: JSON.stringify({ pid: 123, sessionId: 'c1', hostSessionId: 's1', status: 'busy', cwd: '/x/TerraVitae', name: 'Terra Vitae - Build', updatedAt: NOW - 60_000 }),
+    [`${HOME}/.claude/sessions/456.json`]: JSON.stringify({ pid: 456, sessionId: 'c9', status: 'idle', cwd: '/x/Scratch', entrypoint: 'cli', updatedAt: NOW - 60_000 }),
   }
+  keyReads.length = 0
   on('fs.list', ($, e) => (dirs[e.path] ? { value: dirs[e.path] } : { deny: 'no such folder' }) as never)
-  on('fs.read', ($, e) => (e.path.endsWith('plugin.json') ? { value: '{"version":"9.9.9"}' } : e.path.endsWith('CHANGELOG.md') ? { value: '## 9.9.9 — 2026-10-06\n' } : files[e.path] !== undefined ? { value: files[e.path] } : { deny: 'no such file' }) as never)
+  on('fs.read', ($, e) => (e.path.endsWith('.key') ? (keyReads.push(e.path), { deny: 'never read' }) : e.path.endsWith('plugin.json') ? { value: '{"version":"9.9.9"}' } : e.path.endsWith('CHANGELOG.md') ? { value: '## 9.9.9 — 2026-10-06\n' } : files[e.path] !== undefined ? { value: files[e.path] } : { deny: 'no such file' }) as never)
   on('fs.exists', ($, e) => ({ value: e.path === '/x/TerraVitae/.git' }) as never)
 }
 
@@ -267,6 +290,10 @@ describe('pane', () => {
       expect(await ui.find({ key: 'p-s1' })).toBeUndefined()
       await ui.press({ key: 'groups-expand' })
       expect(await ui.find({ key: 'p-s1' })).toBeDefined()
+      await ui.press({ key: 'tab-sessions' })
+      expect(await ui.find({ type: 'Text', text: /^Working now · 1$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^Waiting for you · 1$/ })).toBeDefined()
+      expect(keyReads).toEqual([])
       await ui.unmount()
     }
   })
