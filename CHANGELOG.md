@@ -1,0 +1,11 @@
+# Changelog
+
+## 1.0.0 — 2026-10-06
+
+First release.
+
+- Plan usage limits for the whole account (current session, weekly, per model) with amber and red alerts, toasts, macOS notifications and a status-line summary
+- Daily budget: the weekly limit ÷ working days, in 24-hour budget days counted from the weekly reset, with today's used vs available and the week's allowance
+- Token usage on this computer by hour, budget day, project (grouped by sidebar group, collapsible) and model, counted since each limit last reset
+- Sessions running, awaiting you, and on Remote Control
+- Usage bar above the prompt with a Dashboard button; opening the dashboard uses no tokens

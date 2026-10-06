@@ -1,0 +1,15 @@
+{
+  "name": "whitefish-creative",
+  "description": "Claude Code plugins from WhiteFish Creative Limited",
+  "owner": {
+    "name": "WhiteFish Creative Limited",
+    "url": "https://whitefishcreative.co.uk/"
+  },
+  "plugins": [
+    {
+      "name": "token-dashboard",
+      "source": "./",
+      "description": "Claude usage overview: plan limits, daily budget, alerts, and token usage by hour, day, project and model"
+    }
+  ]
+}
