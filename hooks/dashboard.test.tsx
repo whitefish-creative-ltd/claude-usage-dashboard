@@ -203,13 +203,15 @@ describe('pane', () => {
     on('fs.exists', () => ({ value: true }))
     on('fs.write', () => ({ value: undefined }) as never)
     on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(a), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
-    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__list_sessions', description: '' }] }) as never)
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__list_sessions', description: '' }, { name: 'mcp__ccd_session_mgmt__get_session', description: '' }] }) as never)
     on('tool.check', () => ({ decision: 'allow' }))
     const rows = [
       { sessionId: 's1', title: 'a', cwd: '/x/TerraVitae', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', group: { name: 'Other Stuff' }, remoteControlActive: false },
       { sessionId: 's2', title: 'b', cwd: '/x/ClearLoop', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', group: { name: 'Clearloop' }, remoteControlActive: false },
     ]
-    on('tool.call', { tool: 'mcp__ccd_session_mgmt__list_sessions' }, () => ({ result: JSON.stringify(rows), text: JSON.stringify(rows) }) as never)
+    // The list excludes the current session (s2); get_session('self') supplies it.
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__list_sessions' }, () => ({ result: JSON.stringify(rows.slice(0, 1)), text: JSON.stringify(rows.slice(0, 1)) }) as never)
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_session' }, () => ({ result: JSON.stringify(rows[1]), text: JSON.stringify(rows[1]) }) as never)
     on('session.usage', () => ({ value: { startedAt: 0, context: { contextWindow: 1000000 }, rateLimits: [] } }) as never)
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({ plugin: 'token-dashboard', surface, component: 'Pane', requestId: 'token-dashboard', props: { title: 'x', isFocused: true, bodyColumns: 100, placement: 'dock' } })

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-10-06
+
+- Fixed the session you're in being listed under "Ungrouped" (the app's session list leaves it out), which made the Projects tab differ between sessions
+
 ## 1.1.0 — 2026-10-06
 
 - Projects now lists each project by its name in the Claude Desktop sidebar, under the group it's filed in there, so every session of the dashboard shows the same grouping. Terminal-only usage is listed by folder under "Terminal and other"

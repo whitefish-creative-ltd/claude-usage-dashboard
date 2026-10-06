@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-0A4E75">
+  <img alt="Version 1.1.1" src="https://img.shields.io/badge/version-1.1.1-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS" src="https://img.shields.io/badge/platform-macOS-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>

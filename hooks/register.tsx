@@ -28,6 +28,7 @@ const PANE = 'token-dashboard'
 const USAGE_TOOL = 'mcp__ccd_session_mgmt__get_usage'
 const SESSIONS_TOOL = 'mcp__ccd_session_mgmt__list_sessions'
 const GROUPS_TOOL = 'mcp__ccd_sidebar__list_groups'
+const SESSION_TOOL = 'mcp__ccd_session_mgmt__get_session'
 
 const aggA = atom({ plugin: 'token-dashboard', key: 'agg' } as const, null)
 const aggErrorA = atom({ plugin: 'token-dashboard', key: 'aggError' } as const, null)
@@ -132,7 +133,15 @@ async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions>
       groupOrder = undefined
     }
   }
-  return { status: 'ok', rows: parseSessions(r.text) ?? [], groupOrder, at: now }
+  // The list leaves out the session the dashboard runs in: add it, so its project
+  // lands in its own group (otherwise each session sees a different grouping).
+  const rows = parseSessions(r.text) ?? []
+  const self = await appTool($, SESSION_TOOL, { session_id: 'self' }, ask)
+  if (self.text) {
+    const me = parseSessions(`[${self.text}]`)?.[0]
+    if (me?.sessionId && !rows.some(x => x.sessionId === me.sessionId)) rows.unshift(me)
+  }
+  return { status: 'ok', rows, groupOrder, at: now }
 }
 
 async function loadAggregate($: $T, plan: Plan | null, cwds: string[]): Promise<{ agg?: Aggregate; error?: string }> {
