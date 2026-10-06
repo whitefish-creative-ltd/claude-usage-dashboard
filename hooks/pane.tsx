@@ -641,7 +641,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         {section(
           'Dashboard',
           null,
-          field('Close the dashboard', 'Hides the dashboard, the bar above the prompt and the status line. Open it again with /usage-dashboard.', <Button key="close-dashboard" label="Close" onPress={() => act.close()} />),
+          field('Close the dashboard', 'Hides the dashboard, the bar above the prompt and the status line. Open it again with /usage-dashboard-wfc.', <Button key="close-dashboard" label="Close" onPress={() => act.close()} />),
         )}
         {section(
           'About',

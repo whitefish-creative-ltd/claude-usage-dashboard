@@ -7,9 +7,12 @@
   },
   "plugins": [
     {
-      "name": "token-dashboard",
+      "name": "whitefish-usage-dashboard",
       "source": "./",
       "description": "Claude usage overview: plan limits, daily budget, alerts, and token usage by hour, day, project and model"
     }
-  ]
+  ],
+  "renames": {
+    "token-dashboard": "whitefish-usage-dashboard"
+  }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — 2026-10-06
+
+- Renamed to **WhiteFish Usage Dashboard** (plugin `whitefish-usage-dashboard`); existing installs of `token-dashboard` move across automatically
+- The command is now `/usage-dashboard-wfc`, so it can't clash with another plugin's command
+- Settings and the dashboard's saved readings start fresh after the rename
+
 ## 1.3.0 — 2026-10-06
 
 - Works on macOS, Windows and Linux with nothing to install: the history scanner is now built into the plugin instead of a Python script

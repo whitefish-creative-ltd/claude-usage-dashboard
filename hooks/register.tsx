@@ -26,20 +26,20 @@ import {
 } from './logic'
 import type { Level } from './logic'
 
-const PANE = 'token-dashboard'
+const PANE = 'whitefish-usage-dashboard'
 
-const aggA = atom({ plugin: 'token-dashboard', key: 'agg' } as const, null)
-const aggErrorA = atom({ plugin: 'token-dashboard', key: 'aggError' } as const, null)
-const planA = atom({ plugin: 'token-dashboard', key: 'plan' } as const, null)
-const sessionsA = atom({ plugin: 'token-dashboard', key: 'sessions' } as const, null)
-const historyA = atom({ plugin: 'token-dashboard', key: 'history' } as const, [])
-const settingsA = atom({ plugin: 'token-dashboard', key: 'settings' } as const, DEFAULT_SETTINGS)
-const tabA = atom({ plugin: 'token-dashboard', key: 'tab' } as const, 'overview')
-const colorsA = atom({ plugin: 'token-dashboard', key: 'modelColors' } as const, {})
-const refreshingA = atom({ plugin: 'token-dashboard', key: 'refreshing' } as const, false)
-const bandDismissedA = atom({ plugin: 'token-dashboard', key: 'bandDismissed' } as const, '')
-const collapsedA = atom({ plugin: 'token-dashboard', key: 'collapsedGroups' } as const, [])
-const aboutA = atom({ plugin: 'token-dashboard', key: 'about' } as const, { version: '', released: '' })
+const aggA = atom({ plugin: 'whitefish-usage-dashboard', key: 'agg' } as const, null)
+const aggErrorA = atom({ plugin: 'whitefish-usage-dashboard', key: 'aggError' } as const, null)
+const planA = atom({ plugin: 'whitefish-usage-dashboard', key: 'plan' } as const, null)
+const sessionsA = atom({ plugin: 'whitefish-usage-dashboard', key: 'sessions' } as const, null)
+const historyA = atom({ plugin: 'whitefish-usage-dashboard', key: 'history' } as const, [])
+const settingsA = atom({ plugin: 'whitefish-usage-dashboard', key: 'settings' } as const, DEFAULT_SETTINGS)
+const tabA = atom({ plugin: 'whitefish-usage-dashboard', key: 'tab' } as const, 'overview')
+const colorsA = atom({ plugin: 'whitefish-usage-dashboard', key: 'modelColors' } as const, {})
+const refreshingA = atom({ plugin: 'whitefish-usage-dashboard', key: 'refreshing' } as const, false)
+const bandDismissedA = atom({ plugin: 'whitefish-usage-dashboard', key: 'bandDismissed' } as const, '')
+const collapsedA = atom({ plugin: 'whitefish-usage-dashboard', key: 'collapsedGroups' } as const, [])
+const aboutA = atom({ plugin: 'whitefish-usage-dashboard', key: 'about' } as const, { version: '', released: '' })
 
 type $T = EngineInterface
 
@@ -515,13 +515,13 @@ export const register: Register = on => {
     } catch {
       // shown without a version
     }
-    await $.command.register({ name: 'usage-dashboard', description: 'Open the Claude usage dashboard (tokens, limits, budget, sessions)' })
+    await $.command.register({ name: 'usage-dashboard-wfc', description: 'Open the WhiteFish usage dashboard: plan limits, daily budget, tokens and sessions' })
     await restartTimer($)
     void refresh($)
     return next(e)
   })
 
-  on('command.run', { command: 'usage-dashboard' }, async $ => {
+  on('command.run', { command: 'usage-dashboard-wfc' }, async $ => {
     if ((await read($, settingsA)).isClosed) await saveSettings($, { isClosed: false })
     await $.ui.open({ id: PANE, title: 'Claude usage overview' })
     void refresh($)

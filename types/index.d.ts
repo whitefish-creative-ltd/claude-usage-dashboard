@@ -104,7 +104,7 @@ export type Settings = {
   statusLine: boolean
   /** The slim usage bar above the prompt, with a button that opens the dashboard. */
   showBand: boolean
-  /** Closed from Settings: no pane, bar or status line until /usage-dashboard opens it again. */
+  /** Closed from Settings: no pane, bar or status line until /usage-dashboard-wfc opens it again. */
   isClosed: boolean
 }
 
@@ -112,7 +112,7 @@ export type Tab = 'overview' | 'tokens' | 'projects' | 'models' | 'sessions' | '
 
 declare module 'claude-code' {
   interface PluginState {
-    'token-dashboard': {
+    'whitefish-usage-dashboard': {
       agg: Aggregate | null
       aggError: string | null
       plan: Plan | null

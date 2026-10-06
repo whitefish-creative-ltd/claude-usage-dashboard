@@ -218,10 +218,10 @@ describe('pane', () => {
     } }) as never)
     for (const surface of ['terminal', 'desktop'] as const) {
       const ui = await $.ui.mount({
-        plugin: 'token-dashboard',
+        plugin: 'whitefish-usage-dashboard',
         surface,
         component: 'Pane',
-        requestId: 'token-dashboard',
+        requestId: 'whitefish-usage-dashboard',
         props: { title: 'Claude usage', isFocused: true, bodyColumns: 100, placement: 'dock' },
       })
       await ui.press({ key: 'refresh' })
@@ -252,7 +252,7 @@ describe('pane', () => {
     on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_session' }, () => ({ result: JSON.stringify(rows[1]), text: JSON.stringify(rows[1]) }) as never)
     on('session.usage', () => ({ value: { startedAt: 0, context: { contextWindow: 1000000 }, rateLimits: [] } }) as never)
     for (const surface of ['terminal', 'desktop'] as const) {
-      const ui = await $.ui.mount({ plugin: 'token-dashboard', surface, component: 'Pane', requestId: 'token-dashboard', props: { title: 'x', isFocused: true, bodyColumns: 100, placement: 'dock' } })
+      const ui = await $.ui.mount({ plugin: 'whitefish-usage-dashboard', surface, component: 'Pane', requestId: 'whitefish-usage-dashboard', props: { title: 'x', isFocused: true, bodyColumns: 100, placement: 'dock' } })
       await ui.press({ key: 'refresh' })
       await ui.press({ key: 'tab-projects' })
       expect(await ui.find({ type: 'Text', text: /^Other Stuff$/ })).toBeDefined()
@@ -272,10 +272,10 @@ describe('pane', () => {
     mock.store(on)
     for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
       const ui = await $.ui.mount({
-        plugin: 'token-dashboard',
+        plugin: 'whitefish-usage-dashboard',
         surface,
         component: 'Pane',
-        requestId: 'token-dashboard',
+        requestId: 'whitefish-usage-dashboard',
         props: { title: 'Claude usage', isFocused: true, bodyColumns: 100, placement: 'dock' },
       })
       expect(await ui.find({ key: 'tab-settings' })).toBeDefined()

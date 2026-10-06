@@ -7,7 +7,7 @@
   </a>
 </p>
 
-<h1 align="center">Claude Usage Dashboard</h1>
+<h1 align="center">WhiteFish Usage Dashboard</h1>
 
 <p align="center">
   <strong>See where your Claude plan goes — before you hit the limit.</strong><br>
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.3.0" src="https://img.shields.io/badge/version-1.3.0-0A4E75">
+  <img alt="Version 1.4.0" src="https://img.shields.io/badge/version-1.4.0-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS, Windows and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -59,16 +59,16 @@ In your terminal:
 
 ```bash
 claude plugin marketplace add whitefish-creative-ltd/claude-usage-dashboard
-claude plugin install token-dashboard@whitefish-creative
+claude plugin install whitefish-usage-dashboard@whitefish-creative
 ```
 
-Or in a Claude Code session, run `/plugin marketplace add whitefish-creative-ltd/claude-usage-dashboard`, then `/plugin install token-dashboard@whitefish-creative`.
+Or in a Claude Code session, run `/plugin marketplace add whitefish-creative-ltd/claude-usage-dashboard`, then `/plugin install whitefish-usage-dashboard@whitefish-creative`.
 
 Start a new session, or run `/reload-plugins` in an open one.
 
 ## Getting started
 
-1. Open the dashboard with **`/usage-dashboard`**, or the **Dashboard** button above the prompt.
+1. Open the dashboard with **`/usage-dashboard-wfc`**, or the **Dashboard** button above the prompt.
 2. The first time, press **Connect** and allow access. This lets the dashboard read your per-model limits and your session list from the Claude Desktop app. It only reads; it never changes anything.
 3. Go to **Settings** and set your **working days**, alert levels and the rest.
 
@@ -97,7 +97,7 @@ A few things worth knowing:
 | "Awaiting you" window | 12h | How recently an idle session must have been active to count as awaiting you |
 | Refresh every | 1 minute | How often the figures update: 30 seconds to 30 minutes, or Manual (only when you press Refresh or open the dashboard) |
 | After each response | On | Also updates a few seconds after each Claude reply |
-| Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard` |
+| Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard-wfc` |
 
 ## Requirements
 
@@ -130,8 +130,8 @@ Everything stays on your computer. Nothing is sent anywhere: the dashboard makes
 They're called on each refresh (every minute by default; see **Settings → Refresh**). Each is checked first and skipped if it would ask your permission; pressing **Connect** calls them once with your go-ahead so you can allow them.
 
 **What it hooks**
-- `session.start` — loads your settings and registers `/usage-dashboard`.
-- `command.run` — answers only its own `/usage-dashboard` command, which opens the dashboard and adds nothing to the conversation.
+- `session.start` — loads your settings and registers `/usage-dashboard-wfc`.
+- `command.run` — answers only its own `/usage-dashboard-wfc` command, which opens the dashboard and adds nothing to the conversation.
 - `session.measure` — notices when your plan's usage changes after a reply, to refresh a few seconds later.
 - `ui.render` — draws the dashboard pane and the bar above the prompt.
 
@@ -142,18 +142,18 @@ They're called on each refresh (every minute by default; see **Settings → Refr
 New releases reach you when the version number changes — see [CHANGELOG.md](CHANGELOG.md). To update now:
 
 ```bash
-claude plugin update token-dashboard@whitefish-creative
+claude plugin update whitefish-usage-dashboard@whitefish-creative
 ```
 
 To update automatically, open `/plugin` → **Marketplaces** → **whitefish-creative** → **Enable auto-update**.
 
 ## Troubleshooting
 
-- **`/usage-dashboard` isn't listed:** start a new session or run `/reload-plugins`. Run `/plugin` and check the dashboard appears under installed plugins.
+- **`/usage-dashboard-wfc` isn't listed:** start a new session or run `/reload-plugins`. Run `/plugin` and check the dashboard appears under installed plugins.
 - **No per-model limits or sessions:** open **Settings → App access** and press **Connect**. These need the Claude Desktop app.
 - **"Reading your history…":** the first scan works through the last 15 days of history over a few refreshes; figures fill in as it goes.
 - **Usage under "Terminal and other":** Claude Code used from the terminal, or from a desktop session that has since been deleted, listed by folder.
-- **Hiding it:** Settings → **Close** hides the dashboard, the bar above the prompt and the status line. `/usage-dashboard` brings it back.
+- **Hiding it:** Settings → **Close** hides the dashboard, the bar above the prompt and the status line. `/usage-dashboard-wfc` brings it back.
 
 ## Development
 
