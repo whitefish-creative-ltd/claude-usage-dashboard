@@ -49,6 +49,10 @@ let busy = false
 let timer: { cancel: () => void } | null = null
 let measureTimer: { cancel: () => void } | null = null
 let followUp: { cancel: () => void } | null = null
+/** A refresh that should ask for app access, waiting for the one in progress. */
+let pendingAsk = false
+/** Asked for app access on opening the dashboard this session (asked once, not on every open). */
+let askedThisSession = false
 
 /** Most characters one refresh reads, so a first scan spreads over several refreshes. */
 const READ_BUDGET = 120_000_000
@@ -407,7 +411,10 @@ async function loadAggregate($: $T, plan: Plan | null, now: number): Promise<{ a
 }
 
 async function refresh($: $T, ask = false) {
-  if (busy) return
+  if (busy) {
+    if (ask) pendingAsk = true
+    return
+  }
   busy = true
   let more = false
   try {
@@ -443,6 +450,11 @@ async function refresh($: $T, ask = false) {
   } finally {
     busy = false
     await update($, refreshingA, () => false)
+  }
+  if (pendingAsk) {
+    pendingAsk = false
+    void refresh($, true)
+    return
   }
   // A first scan spreads over several refreshes: carry on shortly.
   if (more) {
@@ -523,6 +535,23 @@ async function saveSettings($: $T, patch: Partial<Settings>) {
   void refresh($)
 }
 
+/**
+ * Opens the dashboard. If the app's tools aren't allowed yet (and the person hasn't
+ * turned app access off), asks for them once per session: Claude Code shows its
+ * permission prompt, and a refusal leaves the Connect button for later.
+ */
+async function openDashboard($: $T) {
+  const settings = await read($, settingsA)
+  if (settings.isClosed) await saveSettings($, { isClosed: false })
+  await $.ui.open({ id: PANE, title: 'Claude usage overview' })
+  const sessions = await read($, sessionsA)
+  const plan = await read($, planA)
+  const isConnected = sessions?.status === 'ok' && plan?.source === 'app'
+  const ask = settings.appAccess && !isConnected && !askedThisSession
+  if (ask) askedThisSession = true
+  void refresh($, ask)
+}
+
 async function closeDashboard($: $T) {
   await saveSettings($, { isClosed: true })
   $.ui.status(undefined)
@@ -558,9 +587,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'usage-dashboard-wfc' }, async $ => {
-    if ((await read($, settingsA)).isClosed) await saveSettings($, { isClosed: false })
-    await $.ui.open({ id: PANE, title: 'Claude usage overview' })
-    void refresh($)
+    await openDashboard($)
     // No text: nothing is added to the conversation, so opening it costs no tokens.
     return {}
   })
@@ -602,7 +629,7 @@ export const register: Register = on => {
           <Text dimColor>{all.map(r => `${short[r.id]} ${fmtPct(r.pct)}`).join(' · ')}</Text>
         )}
         <Box flexDirection="row" gap={1}>
-          <Button key="band-open" label="Dashboard" onPress={() => void $.ui.open({ id: PANE, title: 'Claude usage overview' })} />
+          <Button key="band-open" label="Dashboard" onPress={() => void openDashboard($)} />
           {isAlert ? <Button key="band-hide" label="Hide" onPress={() => void update($, bandDismissedA, () => sig)} /> : null}
         </Box>
       </Box>

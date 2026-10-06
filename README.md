@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.6.0" src="https://img.shields.io/badge/version-1.6.0-0A4E75">
+  <img alt="Version 1.7.0" src="https://img.shields.io/badge/version-1.7.0-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS, Windows and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -69,7 +69,7 @@ Start a new session, or run `/reload-plugins` in an open one.
 ## Getting started
 
 1. Open the dashboard with **`/usage-dashboard-wfc`**, or the **Dashboard** button above the prompt.
-2. The first time, press **Connect** and allow access. This lets the dashboard read your per-model limits and your session list from the Claude Desktop app. It only reads; it never changes anything.
+2. The first time you open it, Claude asks you to allow the dashboard to read your plan limits and session list from the Claude Desktop app. Allow it (choose to always allow, so it isn't asked again). It only reads; it never changes anything. If you skip it, **Settings → App access → Connect** asks again.
 3. Go to **Settings** and set your **working days**, alert levels and the rest.
 
 ## How the numbers work
@@ -129,7 +129,7 @@ Everything stays on your computer. Nothing is sent anywhere: the dashboard makes
 - `mcp__ccd_session_mgmt__list_sessions` and `mcp__ccd_session_mgmt__get_session` (`self`) — your sessions' titles, folders, sidebar groups and whether they're running.
 - `mcp__ccd_sidebar__list_groups` — your sidebar groups' names and order.
 
-They're called on each refresh (every minute by default; see **Settings → Refresh**), and never while **Settings → App access** is disconnected. Each is checked first and skipped if it would ask your permission; pressing **Connect** calls them once with your go-ahead so you can allow them.
+They're called on each refresh (every minute by default; see **Settings → Refresh**), and never while **Settings → App access** is disconnected. Each is checked first and skipped if it would ask your permission. When you open the dashboard and it isn't connected, it asks once that session; **Connect** asks again whenever you choose.
 
 **What it hooks**
 - `session.start` — loads your settings and registers `/usage-dashboard-wfc`.

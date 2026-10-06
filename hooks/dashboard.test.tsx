@@ -183,7 +183,7 @@ type On = Parameters<Parameters<typeof test>[1]>[1]
 const keyReads: string[] = []
 
 function fakeComputer(on: On) {
-  mock.clock(on, { now: NOW })
+  const clock = mock.clock(on, { now: NOW })
   mock.store(on)
   on('env.get', ($, e) => ({ value: e.name === 'HOME' ? HOME : undefined }) as never)
   const entry = (name: string, kind: 'file' | 'dir', size = 0) => ({ name, kind, size, mtimeMs: NOW - 60_000, isLink: false })
@@ -206,6 +206,7 @@ function fakeComputer(on: On) {
   on('fs.list', ($, e) => (dirs[e.path] ? { value: dirs[e.path] } : { deny: 'no such folder' }) as never)
   on('fs.read', ($, e) => (e.path.endsWith('.key') ? (keyReads.push(e.path), { deny: 'never read' }) : e.path.endsWith('plugin.json') ? { value: '{"version":"9.9.9"}' } : e.path.endsWith('CHANGELOG.md') ? { value: '## 9.9.9 — 2026-10-06\n' } : files[e.path] !== undefined ? { value: files[e.path] } : { deny: 'no such file' }) as never)
   on('fs.exists', ($, e) => ({ value: e.path === '/x/TerraVitae/.git' }) as never)
+  return clock
 }
 
 describe('scanner', () => {
@@ -305,6 +306,26 @@ describe('pane', () => {
       expect(await ui.find({ key: 'disconnect' })).toBeDefined()
       await ui.unmount()
     }
+  })
+
+  test('opening the dashboard asks for app access once when it is not connected', async ($, on) => {
+    const clock = fakeComputer(on)
+    on('session.usage', () => ({ value: { startedAt: 0, context: { contextWindow: 1000000 }, rateLimits: [] } }) as never)
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__get_usage', description: '' }] }) as never)
+    on('tool.check', () => ({ decision: 'ask' }))
+    const consented: string[] = []
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_usage' }, ($, e) => {
+      const c = (e as { consent?: string }).consent
+      if (c) consented.push(c)
+      return { result: APP, text: APP } as never
+    })
+    on('ui.open', () => ({ value: {} }) as never)
+    await $.command.run({ command: 'usage-dashboard-wfc', args: '' })
+    await clock.settle()
+    expect(consented.length).toBe(1)
+    await $.command.run({ command: 'usage-dashboard-wfc', args: '' })
+    await clock.settle()
+    expect(consented.length).toBe(1) // asked once this session, not on every open
   })
 
   test('draws and switches tabs on every surface', async ($, on) => {

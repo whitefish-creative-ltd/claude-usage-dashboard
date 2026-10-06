@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.0 — 2026-10-06
+
+- Opening the dashboard asks for app access straight away when it isn't connected (once a session, and not after you've disconnected), instead of waiting for you to find Connect
+
 ## 1.6.0 — 2026-10-06
 
 - Settings → App access shows **● Connected** with a **Disconnect** button once the dashboard can read your plan limits and session list from the Claude app, and **Connect** only when it can't (or you've turned it off)
