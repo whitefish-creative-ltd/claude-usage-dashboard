@@ -1,26 +1,19 @@
 #!/usr/bin/env bash
-# Sets the version everywhere it lives and dates the release.
-# Usage: ./release.sh 1.1.0   (then add notes under the new heading in CHANGELOG.md)
+# Sets the release version in .claude-plugin/plugin.json and the README badge,
+# and starts a dated entry in CHANGELOG.md. The dashboard reads both at start-up.
+# Usage: ./release.sh 1.3.0   (then add notes under the new heading in CHANGELOG.md)
 set -euo pipefail
 cd "$(dirname "$0")"
 VERSION="${1:?usage: ./release.sh <version>}"
 DATE="$(date +%Y-%m-%d)"
-python3 - "$VERSION" "$DATE" <<'PY'
-import json, sys
-version, date = sys.argv[1], sys.argv[2]
-p = '.claude-plugin/plugin.json'
-d = json.load(open(p))
-d['version'] = version
-with open(p, 'w') as f:
-    json.dump(d, f, indent=2)
-    f.write('\n')
-with open('hooks/version.ts', 'w') as f:
-    f.write("// Written by release.sh: keep in step with .claude-plugin/plugin.json.\n")
-    f.write(f"export const VERSION = '{version}'\nexport const RELEASED = '{date}'\n")
-c = open('CHANGELOG.md').read()
-heading = f"## {version} — {date}"
-if heading not in c:
-    c = c.replace("# Changelog\n", f"# Changelog\n\n{heading}\n\n- \n", 1)
-    open('CHANGELOG.md', 'w').write(c)
-PY
-echo "Version $VERSION, released $DATE. Add notes to CHANGELOG.md, then commit and push."
+
+sed -i.bak -E "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" .claude-plugin/plugin.json
+sed -i.bak -E "s/version-[0-9.]+-0A4E75/version-${VERSION}-0A4E75/; s/alt=\"Version [0-9.]+\"/alt=\"Version ${VERSION}\"/" README.md
+rm -f .claude-plugin/plugin.json.bak README.md.bak
+
+HEADING="## ${VERSION} — ${DATE}"
+if ! grep -qF "$HEADING" CHANGELOG.md; then
+  { echo "# Changelog"; echo; echo "$HEADING"; echo; echo "- "; tail -n +2 CHANGELOG.md; } > CHANGELOG.md.new
+  mv CHANGELOG.md.new CHANGELOG.md
+fi
+echo "Version ${VERSION}, released ${DATE}. Add notes to CHANGELOG.md, then commit and push."

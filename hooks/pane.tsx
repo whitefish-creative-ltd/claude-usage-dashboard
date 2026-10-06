@@ -1,7 +1,6 @@
 import type { ElementTable } from 'claude-code'
 
 import type { Aggregate, Plan, Sessions, SessionRow, Settings, Snapshot, Tab } from '../types'
-import { VERSION, RELEASED } from './version'
 import { area, bars, donut, heatmap, line, meter, rule, segMeter, smallText, textBar } from './charts'
 import {
   DAY,
@@ -14,7 +13,7 @@ import {
   findWindow,
   fmtPct,
   NO_SESSION,
-  fmtTokens,
+  fmtCount,
   groupSessionUsage,
   levelOf,
   prettyEntry,
@@ -27,7 +26,6 @@ import type { Level } from './logic'
 
 /** Readable on both light and dark surfaces, so nothing depends on knowing the theme. */
 const WEBSITE = 'https://whitefishcreative.co.uk/'
-const CREDIT = `Created by WhiteFish Creative Limited · v${VERSION}`
 
 const TONE: Record<Level, string> = { ok: '#3987e5', amber: '#c98500', red: '#d03b3b' }
 
@@ -35,7 +33,6 @@ export type PaneActions = {
   refresh: (ask?: boolean) => void
   setTab: (tab: Tab) => void
   saveSettings: (patch: Partial<Settings>) => void
-  openSession: (row: SessionRow) => void
   rearm: () => void
   close: () => void
   setCollapsed: (groups: string[]) => void
@@ -52,6 +49,7 @@ export type PaneData = {
   colors: Record<string, string>
   refreshing: boolean
   collapsedGroups: string[]
+  about: { version: string; released: string }
   now: number
 }
 
@@ -62,6 +60,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
   // The terminal's table answers Svg with a fragment that draws nothing: use text there.
   const Svg = surface !== 'terminal' && 'Svg' in els ? els.Svg : undefined
   const { agg, plan, sessions, history, settings, tab, colors, now } = d
+  const credit = `Created by WhiteFish Creative Limited${d.about.version ? ` · v${d.about.version}` : ''}`
 
   const cols = bodyColumns ?? 80
   const barW = Math.max(8, Math.min(30, Math.floor(cols / 3)))
@@ -72,9 +71,9 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
   const weekday = (t: number) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(t + tz + 12 * HOUR).getUTCDay()] as string
   const clock = (t: number) => {
     const x = new Date(t + tz)
-    const h = x.getUTCHours()
+    const hr = x.getUTCHours()
     const m = x.getUTCMinutes()
-    return `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'AM' : 'PM'}`
+    return `${hr % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${hr < 12 ? 'AM' : 'PM'}`
   }
   const resets = (iso?: string) => {
     if (!iso) return ''
@@ -140,13 +139,13 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
       </Box>
       <Box flexGrow={1} flexShrink={1}>
         {segments && Svg ? (
-          <Svg source={segMeter(segments, max)} alt={`${title}: ${fmtTokens(value)}`} />
+          <Svg source={segMeter(segments, max)} alt={`${title}: ${fmtCount(value)}`} />
         ) : (
-          bar(max > 0 ? (value / max) * 100 : 0, tone, `${title}: ${fmtTokens(value)}`)
+          bar(max > 0 ? (value / max) * 100 : 0, tone, `${title}: ${fmtCount(value)}`)
         )}
       </Box>
       <Box width="18%" flexShrink={0} justifyContent="flex-end">
-        <Text dimColor>{fmtTokens(value)}</Text>
+        <Text dimColor>{fmtCount(value)}</Text>
       </Box>
     </Box>
   )
@@ -204,7 +203,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     ['sessions', 'Sessions'],
     ['settings', 'Settings'],
   ]
-  const updated = d.refreshing ? 'Refreshing…' : agg ? `Updated ${relTime(agg.generatedAt, now)}` : 'Loading…'
+  const updated = agg?.isScanning ? 'Reading your history…' : d.refreshing ? 'Refreshing…' : agg ? `Updated ${relTime(agg.generatedAt, now)}` : 'Loading…'
   const header = (
     <Box flexDirection="column">
       <Box flexDirection="row" justifyContent="space-between" alignItems="center">
@@ -240,7 +239,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     limitRow(
       'l-day',
       'Today',
-      today ? `Since ${clock(days.find(x => x.isToday)?.t ?? now)} · ${fmtPct(budget)} of the week per working day` : 'Daily budget · needs a weekly reading',
+      today ? `Since ${clock(days.find(x => x.isToday)?.t ?? now)} · ${fmtPct(today.pctOfBudget)} of daily budget used` : 'Daily budget · needs a weekly reading',
       today?.pctOfBudget,
       { estimate: today?.isEstimate },
     ),
@@ -339,9 +338,9 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
             'This computer',
             localNote,
             <Box flexDirection="row" gap={3} flexWrap="wrap">
-              {stat('Current session', fmtTokens(agg.totals.session.total), sinceSession)}
-              {stat('Today', fmtTokens(agg.totals.today.total), `${agg.totals.today.messages} responses`)}
-              {stat('This week', fmtTokens(agg.totals.week.total), sinceWeek)}
+              {stat('Current session', fmtCount(agg.totals.session.total), sinceSession)}
+              {stat('Today', fmtCount(agg.totals.today.total), `${agg.totals.today.messages} responses`)}
+              {stat('This week', fmtCount(agg.totals.week.total), sinceWeek)}
               {split ? stat('Sessions', `${split.processing.length} running`, `${split.awaiting.length} awaiting you`) : null}
             </Box>,
           )}
@@ -351,21 +350,21 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
             'Tokens per hour',
             'Last 24 hours, by model.',
             (() => {
-              const totals = agg.hourly.map(h => h.total)
+              const totals = agg.hourly.map(hb => hb.total)
               const p = peak(totals)
               const ids = agg.models.map(m => m.name)
               return chart(
                 bars({
-                  columns: agg.hourly.map(h => ids.map(m => h.byModel[m] ?? 0)),
+                  columns: agg.hourly.map(hb => ids.map(m => hb.byModel[m] ?? 0)),
                   colors: ids.map(color),
-                  titles: agg.hourly.map(h => `${clock(h.t)}: ${fmtTokens(h.total)}`),
+                  titles: agg.hourly.map(hb => `${clock(hb.t)}: ${fmtCount(hb.total)}`),
                   height: 72,
                 }),
                 'Tokens per hour for the last 24 hours',
                 {
                   legend: modelLegend(),
                   labels: [0, 6, 12, 18].map(i => clock(agg.hourly[i]?.t ?? now)).concat('Now'),
-                  caption: totals[p] ? `Peak ${fmtTokens(totals[p] as number)} at ${clock(agg.hourly[p]?.t ?? now)}` : 'No activity in the last 24 hours',
+                  caption: totals[p] ? `Peak ${fmtCount(totals[p] as number)} at ${clock(agg.hourly[p]?.t ?? now)}` : 'No activity in the last 24 hours',
                 },
               )
             })(),
@@ -386,10 +385,10 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           'This computer',
           localNote,
           <Box flexDirection="row" gap={3} flexWrap="wrap">
-            {stat('Current session', fmtTokens(t.session.total), sinceSession)}
-            {stat('Today', fmtTokens(t.today.total), `${t.today.messages} responses`)}
-            {stat('This week', fmtTokens(t.week.total), sinceWeek)}
-            {stat('Last 14 days', fmtTokens(t.fourteenDays.total))}
+            {stat('Current session', fmtCount(t.session.total), sinceSession)}
+            {stat('Today', fmtCount(t.today.total), `${t.today.messages} responses`)}
+            {stat('This week', fmtCount(t.week.total), sinceWeek)}
+            {stat('Last 14 days', fmtCount(t.fourteenDays.total))}
           </Box>,
         )}
         {Svg &&
@@ -400,11 +399,11 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
               bars({
                 columns: agg.daily.map(x => agg.models.map(m => x.byModel[m.name] ?? 0)),
                 colors: agg.models.map(m => color(m.name)),
-                titles: agg.daily.map(x => `${weekday(x.t)} ${x.date.slice(5)}: ${fmtTokens(x.total)}`),
+                titles: agg.daily.map(x => `${weekday(x.t)} ${x.date.slice(5)}: ${fmtCount(x.total)}`),
                 height: 80,
               }),
               'Tokens per day by model',
-              { legend: modelLegend(), labels: dayLabels, caption: `Busiest: ${weekday(agg.daily[peak(agg.daily.map(x => x.total))]?.t ?? now)} with ${fmtTokens(Math.max(...agg.daily.map(x => x.total)))}` },
+              { legend: modelLegend(), labels: dayLabels, caption: `Busiest: ${weekday(agg.daily[peak(agg.daily.map(x => x.total))]?.t ?? now)} with ${fmtCount(Math.max(...agg.daily.map(x => x.total)))}` },
             ),
           )}
         {Svg &&
@@ -447,6 +446,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
             })(),
           )}
         {section('Token types this week', 'Tokens since the weekly reset, by type.', ...typeRows(t.week))}
+        {agg.skippedFiles ? <Text dimColor>{agg.skippedFiles} history file{agg.skippedFiles === 1 ? ' is' : 's are'} over 400 MB and not counted.</Text> : null}
         {Svg &&
           section(
             'When you work',
@@ -464,7 +464,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
       rankRow(
         `p-${p.key}`,
         p.title,
-        `${p.project}${p.isArchived ? ' · archived' : ''} · today ${fmtTokens(p.today.total)}`,
+        `${p.project}${p.isArchived ? ' · archived' : ''} · today ${fmtCount(p.today.total)}`,
         p.week.total,
         max,
         '#3987e5',
@@ -501,7 +501,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
                 </Text>
                 <Box flexDirection="row" gap={2} alignItems="center">
                   <Text dimColor>
-                    {g.projects.length} project{g.projects.length === 1 ? '' : 's'} · {fmtTokens(g.week)} this week
+                    {g.projects.length} project{g.projects.length === 1 ? '' : 's'} · {fmtCount(g.week)} this week
                   </Text>
                   <Button key={`group-toggle-${g.name}`} plain label={isOpen ? 'Hide' : 'Show'} onPress={toggle} />
                 </Box>
@@ -524,7 +524,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         {section(
           'Models this week',
           'Tokens per model since the weekly reset, on this computer.',
-          ...ms.map(m => rankRow(`mm-${m.name}`, prettyModel(m.name), `Current session ${fmtTokens(m.session.total)} · output ${fmtTokens(m.week.output)}`, m.week.total, mMax, color(m.name))),
+          ...ms.map(m => rankRow(`mm-${m.name}`, prettyModel(m.name), `Current session ${fmtCount(m.session.total)} · output ${fmtCount(m.week.output)}`, m.week.total, mMax, color(m.name))),
         )}
         {Svg &&
           section(
@@ -534,7 +534,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
               bars({
                 columns: agg.daily.map(x => ms.map(m => x.byModel[m.name] ?? 0)),
                 colors: ms.map(m => color(m.name)),
-                titles: agg.daily.map(x => `${weekday(x.t)} ${x.date.slice(5)}: ${ms.map(m => `${prettyModel(m.name)} ${fmtTokens(x.byModel[m.name] ?? 0)}`).join(', ')}`),
+                titles: agg.daily.map(x => `${weekday(x.t)} ${x.date.slice(5)}: ${ms.map(m => `${prettyModel(m.name)} ${fmtCount(x.byModel[m.name] ?? 0)}`).join(', ')}`),
                 height: 80,
               }),
               'Tokens per day by model',
@@ -544,7 +544,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         {section(
           'Where Claude Code ran',
           'Tokens per Claude Code app since the weekly reset, on this computer.',
-          ...es.map(x => rankRow(`e-${x.name}`, prettyEntry(x.name), `Current session ${fmtTokens(x.session.total)}`, x.week.total, eMax, '#199e70')),
+          ...es.map(x => rankRow(`e-${x.name}`, prettyEntry(x.name), `Current session ${fmtCount(x.session.total)}`, x.week.total, eMax, '#199e70')),
         )}
       </Box>
     )
@@ -566,7 +566,6 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
                 {r.cwd.split('/').pop()} · {r.group ?? 'Ungrouped'} · {relTime(Date.parse(r.lastActivityAt), now)}
               </Text>
             </Box>
-            <Button key={`open-${title}-${r.sessionId}`} label="Open" onPress={() => act.openSession(r)} />
           </Box>
         )),
       )
@@ -629,7 +628,6 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           'Warning levels for the session, daily and weekly limits.',
           field('Amber at', 'First warning.', pick('amber', settings.amber, [50, 60, 70, 75, 80, 85], n => `${n}%`, v => act.saveSettings({ amber: v }))),
           field('Red at', 'Must be above amber.', pick('red', settings.red, [70, 80, 85, 90, 95, 100], n => `${n}%`, v => act.saveSettings({ red: v }))),
-          field('macOS notifications', 'In addition to the in-app toast.', <Button key="osNotify" label={settings.osNotify ? 'On' : 'Off'} onPress={() => act.saveSettings({ osNotify: !settings.osNotify })} />),
           field('Status line', 'Shows 5h · day · week at a glance.', <Button key="statusLine" label={settings.statusLine ? 'On' : 'Off'} onPress={() => act.saveSettings({ statusLine: !settings.statusLine })} />),
           field('Usage bar above the prompt', 'Live figures and a button that opens this dashboard, with no tokens used.', <Button key="showBand" label={settings.showBand ? 'On' : 'Off'} onPress={() => act.saveSettings({ showBand: !settings.showBand })} />),
           field('Re-arm alerts', 'Alert again for levels already reached.', <Button key="reset-alerts" label="Re-arm" onPress={() => act.rearm()} />),
@@ -652,7 +650,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
             Created by <Link href={WEBSITE} label="WhiteFish Creative Limited" />
           </Text>,
           <Text dimColor>
-            Version {VERSION} · released {new Date(`${RELEASED}T12:00:00Z`).toUTCString().slice(5, 16)}
+            Version {d.about.version}{d.about.released ? ` · released ${new Date(`${d.about.released}T12:00:00Z`).toUTCString().slice(5, 16)}` : ''}
           </Text>,
         )}
       </Box>
@@ -667,7 +665,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
       {d.aggError && tab !== 'settings' ? <Text color={TONE.red}>Couldn’t read local history: {d.aggError}</Text> : null}
       {body}
       <Box flexDirection="row" justifyContent="flex-start" marginTop={3}>
-        {Svg ? <Svg source={smallText(CREDIT)} alt={CREDIT} /> : <Text dimColor>{CREDIT}</Text>}
+        {Svg ? <Svg source={smallText(credit)} alt={credit} /> : <Text dimColor>{credit}</Text>}
       </Box>
     </Box>
   )

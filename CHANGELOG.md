@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0 — 2026-10-06
+
+- Works on macOS, Windows and Linux with nothing to install: the history scanner is now built into the plugin instead of a Python script
+- The plugin no longer runs any programs or writes any files; the README lists everything it reads and calls
+- The "Today" row reads "Since 3 AM · 20% of daily budget used"
+- History files over 400 MB are skipped (the dashboard says how many)
+- Removed macOS-only extras: system notifications (in-app pop-ups and the warning bar remain) and the Open buttons on the Sessions tab
+
 ## 1.2.0 — 2026-10-06
 
 - Settings → Refresh: choose how often the figures update (30 seconds to 30 minutes, or Manual), and whether to update after each Claude reply

@@ -1,7 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Aggregate, Plan, Sessions, SessionRow, Settings, Snapshot } from '../types'
+import type { Aggregate, Plan, Sessions, Settings, Snapshot } from '../types'
+import { KEEP_DAYS, SCAN_VERSION, emptyScan, ingest, projectCandidates, projectName, prune, summarize } from './scanner'
+import type { FileState, ScanState } from './scanner'
 import { drawPane } from './pane'
 import {
   DAY,
@@ -13,7 +15,7 @@ import {
   dailyUsage,
   findWindow,
   fmtPct,
-  fmtTokens,
+  fmtCount,
   levelOf,
   parseAppPlan,
   parseSessions,
@@ -25,10 +27,6 @@ import {
 import type { Level } from './logic'
 
 const PANE = 'token-dashboard'
-const USAGE_TOOL = 'mcp__ccd_session_mgmt__get_usage'
-const SESSIONS_TOOL = 'mcp__ccd_session_mgmt__list_sessions'
-const GROUPS_TOOL = 'mcp__ccd_sidebar__list_groups'
-const SESSION_TOOL = 'mcp__ccd_session_mgmt__get_session'
 
 const aggA = atom({ plugin: 'token-dashboard', key: 'agg' } as const, null)
 const aggErrorA = atom({ plugin: 'token-dashboard', key: 'aggError' } as const, null)
@@ -41,27 +39,25 @@ const colorsA = atom({ plugin: 'token-dashboard', key: 'modelColors' } as const,
 const refreshingA = atom({ plugin: 'token-dashboard', key: 'refreshing' } as const, false)
 const bandDismissedA = atom({ plugin: 'token-dashboard', key: 'bandDismissed' } as const, '')
 const collapsedA = atom({ plugin: 'token-dashboard', key: 'collapsedGroups' } as const, [])
+const aboutA = atom({ plugin: 'token-dashboard', key: 'about' } as const, { version: '', released: '' })
 
 type $T = EngineInterface
 
 // ---------------------------------------------------------------- data
 
-let python: string | null = null
 let busy = false
 let timer: { cancel: () => void } | null = null
 let measureTimer: { cancel: () => void } | null = null
+let followUp: { cancel: () => void } | null = null
 
-async function findPython($: $T): Promise<string | null> {
-  if (python) return python
-  for (const p of ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3']) {
-    try {
-      if (await $.fs.exists(p)) return (python = p)
-    } catch {
-      // not readable here: try the next
-    }
-  }
-  return null
-}
+/** Most characters one refresh reads, so a first scan spreads over several refreshes. */
+const READ_BUDGET = 120_000_000
+/** Files larger than this are skipped: the plugin can only read whole files. */
+const MAX_FILE = 400_000_000
+/** Files larger than this are re-read at most once an hour. */
+const BIG_FILE = 100_000_000
+
+type ToolResult = { text?: string; status: 'ok' | 'needs-access' | 'unavailable' }
 
 function toolText(r: unknown): string | null {
   const x = r as { deny?: string; isError?: boolean; text?: string; result?: unknown }
@@ -75,35 +71,70 @@ function toolText(r: unknown): string | null {
   return x.result === undefined ? null : JSON.stringify(x.result)
 }
 
-/** Calls one of the desktop app's read-only tools, without raising a dialog unless `ask`. */
-const toolTrace: Record<string, string> = {}
+const CONSENT = 'The user pressed "Connect" on the usage dashboard'
 
-async function appTool($: $T, tool: string, input: Record<string, unknown>, ask: boolean): Promise<{ text?: string; status: 'ok' | 'needs-access' | 'unavailable' }> {
+// The four read-only Claude Desktop tools the dashboard uses, each called by its
+// fixed name. Without `ask`, a tool that would need the person's permission is
+// skipped rather than prompting on every refresh.
+
+async function callGetUsage($: $T, ask: boolean): Promise<ToolResult> {
   try {
-    const tools = await $.tool.list()
-    if (!tools.some(t => t.name === tool)) {
-      toolTrace[tool] = 'not listed'
-      return { status: 'unavailable' }
-    }
+    if (!(await $.tool.list()).some(t => t.name === 'mcp__ccd_session_mgmt__get_usage')) return { status: 'unavailable' }
     if (!ask) {
-      const { decision, reason } = await $.tool.check({ tool, input })
-      toolTrace[tool] = `check: ${decision}${reason ? ` (${reason})` : ''}`
-      if (decision === 'deny') return { status: 'unavailable' }
-      if (decision === 'ask') return { status: 'needs-access' }
+      const { decision } = await $.tool.check({ tool: 'mcp__ccd_session_mgmt__get_usage', input: {} })
+      if (decision !== 'allow') return { status: decision === 'ask' ? 'needs-access' : 'unavailable' }
     }
-    const r = await $.tool.call({ tool, ...input, ...(ask ? { consent: 'The user pressed "Connect app data" on the usage dashboard' } : {}) } as never)
-    const text = toolText(r)
-    const x = r as { deny?: string; isError?: boolean }
-    toolTrace[tool] = text ? `ok (${text.length} chars)` : `no text${x.deny ? `: deny ${x.deny}` : ''}${x.isError ? ': error' : ''}`
+    const text = toolText(await $.tool.call({ tool: 'mcp__ccd_session_mgmt__get_usage', ...(ask ? { consent: CONSENT } : {}) } as never))
     return text ? { text, status: 'ok' } : { status: 'unavailable' }
-  } catch (err) {
-    toolTrace[tool] = `threw: ${String(err)}`
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+async function callListSessions($: $T, ask: boolean): Promise<ToolResult> {
+  try {
+    if (!(await $.tool.list()).some(t => t.name === 'mcp__ccd_session_mgmt__list_sessions')) return { status: 'unavailable' }
+    if (!ask) {
+      const { decision } = await $.tool.check({ tool: 'mcp__ccd_session_mgmt__list_sessions', input: { limit: 500, include_archived: true } })
+      if (decision !== 'allow') return { status: decision === 'ask' ? 'needs-access' : 'unavailable' }
+    }
+    const text = toolText(await $.tool.call({ tool: 'mcp__ccd_session_mgmt__list_sessions', limit: 500, include_archived: true, ...(ask ? { consent: CONSENT } : {}) } as never))
+    return text ? { text, status: 'ok' } : { status: 'unavailable' }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+async function callGetSession($: $T, ask: boolean): Promise<ToolResult> {
+  try {
+    if (!(await $.tool.list()).some(t => t.name === 'mcp__ccd_session_mgmt__get_session')) return { status: 'unavailable' }
+    if (!ask) {
+      const { decision } = await $.tool.check({ tool: 'mcp__ccd_session_mgmt__get_session', input: { session_id: 'self' } })
+      if (decision !== 'allow') return { status: decision === 'ask' ? 'needs-access' : 'unavailable' }
+    }
+    const text = toolText(await $.tool.call({ tool: 'mcp__ccd_session_mgmt__get_session', session_id: 'self', ...(ask ? { consent: CONSENT } : {}) } as never))
+    return text ? { text, status: 'ok' } : { status: 'unavailable' }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+async function callListGroups($: $T, ask: boolean): Promise<ToolResult> {
+  try {
+    if (!(await $.tool.list()).some(t => t.name === 'mcp__ccd_sidebar__list_groups')) return { status: 'unavailable' }
+    if (!ask) {
+      const { decision } = await $.tool.check({ tool: 'mcp__ccd_sidebar__list_groups', input: {} })
+      if (decision !== 'allow') return { status: decision === 'ask' ? 'needs-access' : 'unavailable' }
+    }
+    const text = toolText(await $.tool.call({ tool: 'mcp__ccd_sidebar__list_groups', ...(ask ? { consent: CONSENT } : {}) } as never))
+    return text ? { text, status: 'ok' } : { status: 'unavailable' }
+  } catch {
     return { status: 'unavailable' }
   }
 }
 
 async function loadPlan($: $T, ask: boolean, now: number): Promise<{ plan: Plan; needsAccess: boolean }> {
-  const r = await appTool($, USAGE_TOOL, {}, ask)
+  const r = await callGetUsage($, ask)
   if (r.text) {
     const p = parseAppPlan(r.text, now)
     if (p && (p.windows.length || p.note)) return { plan: p, needsAccess: false }
@@ -113,7 +144,7 @@ async function loadPlan($: $T, ask: boolean, now: number): Promise<{ plan: Plan;
 }
 
 async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions> {
-  const r = await appTool($, SESSIONS_TOOL, { limit: 500, include_archived: true }, ask)
+  const r = await callListSessions($, ask)
   if (r.status !== 'ok' || !r.text) {
     return {
       status: r.status === 'needs-access' ? 'needs-access' : 'unavailable',
@@ -124,7 +155,7 @@ async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions>
   }
   // The sidebar's group order; best effort, the list works without it.
   let groupOrder: string[] | undefined
-  const g = await appTool($, GROUPS_TOOL, {}, ask)
+  const g = await callListGroups($, ask)
   if (g.text) {
     try {
       const list = JSON.parse(g.text) as { name?: string; order?: number }[]
@@ -136,7 +167,7 @@ async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions>
   // The list leaves out the session the dashboard runs in: add it, so its project
   // lands in its own group (otherwise each session sees a different grouping).
   const rows = parseSessions(r.text) ?? []
-  const self = await appTool($, SESSION_TOOL, { session_id: 'self' }, ask)
+  const self = await callGetSession($, ask)
   if (self.text) {
     const me = parseSessions(`[${self.text}]`)?.[0]
     if (me?.sessionId && !rows.some(x => x.sessionId === me.sessionId)) rows.unshift(me)
@@ -144,32 +175,205 @@ async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions>
   return { status: 'ok', rows, groupOrder, at: now }
 }
 
-async function loadAggregate($: $T, plan: Plan | null, cwds: string[]): Promise<{ agg?: Aggregate; error?: string }> {
-  const py = await findPython($)
-  if (!py) return { error: 'python3 not found (looked in /opt/homebrew/bin, /usr/local/bin, /usr/bin).' }
+/** Where Claude Code and the Claude Desktop app keep their files on this computer. */
+async function locations($: $T) {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
+  const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${home}/.claude`
+  const appData = await $.env.get('APPDATA')
+  const desktopDirs = [
+    `${home}/Library/Application Support/Claude/claude-code-sessions`,
+    ...(appData ? [`${appData}/Claude/claude-code-sessions`] : []),
+    `${home}/.config/Claude/claude-code-sessions`,
+  ]
+  return { projects: `${configDir}/projects`, desktopDirs }
+}
+
+async function listJsonl($: $T, dir: string): Promise<{ path: string; size: number; mtime: number }[]> {
+  const out: { path: string; size: number; mtime: number }[] = []
+  let projects: Awaited<ReturnType<typeof $.fs.list>> = []
+  try {
+    projects = await $.fs.list(dir)
+  } catch {
+    return out
+  }
+  for (const p of projects) {
+    if (p.kind !== 'dir') continue
+    const pdir = `${dir}/${p.name}`
+    let entries: Awaited<ReturnType<typeof $.fs.list>> = []
+    try {
+      entries = await $.fs.list(pdir)
+    } catch {
+      continue
+    }
+    for (const e of entries) {
+      if (e.kind === 'file' && e.name.endsWith('.jsonl')) out.push({ path: `${pdir}/${e.name}`, size: e.size, mtime: e.mtimeMs })
+      // a session's subagents keep their own files under <session>/subagents
+      if (e.kind === 'dir') {
+        try {
+          for (const s of await $.fs.list(`${pdir}/${e.name}/subagents`)) {
+            if (s.kind === 'file' && s.name.endsWith('.jsonl')) out.push({ path: `${pdir}/${e.name}/subagents/${s.name}`, size: s.size, mtime: s.mtimeMs })
+          }
+        } catch {
+          // no subagents
+        }
+      }
+    }
+  }
+  return out
+}
+
+/** Reads what's new in Claude Code's history files into the scan state; true when more is left to read. */
+async function scanHistory($: $T, now: number): Promise<{ state: ScanState; more: boolean; skipped: number }> {
+  const stored = (await $.store.get('scan')) as ScanState | undefined
+  const state = stored && stored.version === SCAN_VERSION ? stored : emptyScan()
+  const { projects } = await locations($)
+  const cutoff = now - KEEP_DAYS * DAY
+  const files = (await listJsonl($, projects)).filter(f => f.mtime >= cutoff)
+  const seen = new Set(files.map(f => f.path))
+  for (const p of Object.keys(state.files)) if (!seen.has(p)) delete state.files[p]
+
+  let budget = READ_BUDGET
+  let more = false
+  let skipped = 0
+  const cwds = new Set<string>()
+  // newest first, so a long first scan shows today's figures soonest
+  for (const f of files.sort((a, b) => b.mtime - a.mtime)) {
+    const fs0 = state.files[f.path]
+    if (fs0 && fs0.size === f.size && fs0.mtime === f.mtime) continue
+    if (f.size > MAX_FILE) {
+      skipped++
+      continue
+    }
+    if (fs0 && f.size > BIG_FILE && now - fs0.readAt < HOUR) continue
+    if (budget <= 0) {
+      more = true
+      break
+    }
+    let text: string
+    try {
+      text = await $.fs.read(f.path)
+    } catch {
+      continue
+    }
+    budget -= text.length
+    const file: FileState = fs0 && text.length >= fs0.len ? fs0 : { len: 0, size: 0, mtime: 0, readAt: 0, ids: [] }
+    const chunk = text.slice(file.len)
+    const end = chunk.lastIndexOf('\n')
+    if (end >= 0) {
+      for (const c of ingest(state, f.path, chunk.slice(0, end + 1), file, cutoff)) cwds.add(c)
+      file.len += end + 1
+    }
+    file.size = f.size
+    file.mtime = f.mtime
+    file.readAt = now
+    state.files[f.path] = file
+  }
+
+  // Name each new working folder after its repository: the nearest folder with a .git entry.
+  for (const cwd of cwds) {
+    if (state.cwdProject[cwd]) continue
+    let root: string | undefined
+    for (const c of projectCandidates(cwd)) {
+      try {
+        if (await $.fs.exists(`${c}/.git`)) {
+          root = c
+          break
+        }
+      } catch {
+        break
+      }
+    }
+    state.cwdProject[cwd] = projectName(cwd, root)
+  }
+
+  prune(state, now)
+  try {
+    await $.store.set('scan', state)
+  } catch {
+    // over the store's size limit: keep the totals, drop the per-file message ids
+    for (const f of Object.values(state.files)) f.ids = []
+    try {
+      await $.store.set('scan', state)
+    } catch {
+      // the next refresh reads again
+    }
+  }
+  return { state, more, skipped }
+}
+
+/** Claude Desktop's own record of each Code-tab session: its title and the history ids it holds. */
+async function desktopSessions($: $T): Promise<NonNullable<Aggregate['desktopSessions']>> {
+  const out: NonNullable<Aggregate['desktopSessions']> = []
+  const { desktopDirs } = await locations($)
+  for (const root of desktopDirs) {
+    let accounts: Awaited<ReturnType<typeof $.fs.list>> = []
+    try {
+      accounts = await $.fs.list(root)
+    } catch {
+      continue
+    }
+    for (const a of accounts.filter(x => x.kind === 'dir')) {
+      let orgs: Awaited<ReturnType<typeof $.fs.list>> = []
+      try {
+        orgs = await $.fs.list(`${root}/${a.name}`)
+      } catch {
+        continue
+      }
+      for (const o of orgs.filter(x => x.kind === 'dir')) {
+        let records: Awaited<ReturnType<typeof $.fs.list>> = []
+        try {
+          records = await $.fs.list(`${root}/${a.name}/${o.name}`)
+        } catch {
+          continue
+        }
+        for (const r of records) {
+          if (r.kind !== 'file' || !r.name.startsWith('local_') || !r.name.endsWith('.json')) continue
+          try {
+            const d = JSON.parse(await $.fs.read(`${root}/${a.name}/${o.name}/${r.name}`)) as {
+              sessionId?: string
+              title?: string
+              cliSessionId?: string
+              priorCliSessionIds?: string[]
+              isArchived?: boolean
+            }
+            const ids = [d.cliSessionId, ...(d.priorCliSessionIds ?? [])].filter((x): x is string => typeof x === 'string' && x.length > 0)
+            if (d.sessionId && ids.length) out.push({ id: d.sessionId, title: d.title || 'Untitled session', cliIds: ids, isArchived: Boolean(d.isArchived) })
+          } catch {
+            // a record being written: next refresh
+          }
+        }
+      }
+    }
+  }
+  return out
+}
+
+async function loadAggregate($: $T, plan: Plan | null, now: number): Promise<{ agg?: Aggregate; error?: string; more: boolean }> {
   const week = findWindow(plan, 'seven_day')
   const five = findWindow(plan, 'five_hour')
   const since = week?.resetsAt ? Date.parse(week.resetsAt) - 7 * DAY : undefined
   const sessionSince = five?.resetsAt ? Date.parse(five.resetsAt) - 5 * HOUR : undefined
-  const argv = [
-    py,
-    `${$.plugin.root}/scripts/aggregate.py`,
-    ...(since ? ['--since-ms', String(since)] : []),
-    ...(sessionSince ? ['--session-since-ms', String(sessionSince)] : []),
-    '--cwds-stdin',
-  ]
   try {
-    const r = await $.process.run(argv, { timeoutMs: 180_000, stdin: JSON.stringify(cwds) })
-    if (r.exitCode !== 0) return { error: r.stderr.trim().split('\n').pop() || `aggregate.py exited ${r.exitCode}` }
-    return { agg: JSON.parse(r.stdout) as Aggregate }
+    const started = await $.clock.now()
+    const { state, more, skipped } = await scanHistory($, now)
+    const agg: Aggregate = {
+      ...summarize(state, now, since, sessionSince),
+      desktopSessions: await desktopSessions($),
+      scanMs: (await $.clock.now()) - started,
+      records: Object.keys(state.buckets).length,
+      skippedFiles: skipped,
+      isScanning: more,
+    }
+    return { agg, more }
   } catch (err) {
-    return { error: String(err) }
+    return { error: String(err), more: false }
   }
 }
 
 async function refresh($: $T, ask = false) {
   if (busy) return
   busy = true
+  let more = false
   try {
     await update($, refreshingA, () => true)
     const now = await $.clock.now()
@@ -181,8 +385,9 @@ async function refresh($: $T, ask = false) {
     const sessions = await loadSessions($, ask, now)
     await update($, sessionsA, () => sessions)
 
-    const cwds = [...new Set(sessions.rows.map(row => row.cwd).filter(Boolean))]
-    const { agg, error } = await loadAggregate($, plan, cwds)
+    const result = await loadAggregate($, plan, now)
+    more = result.more
+    const agg = result.agg
     if (agg) {
       await update($, aggA, () => agg)
       const prev = await read($, colorsA)
@@ -192,27 +397,21 @@ async function refresh($: $T, ask = false) {
         await $.store.set('modelColors', colors)
       }
     }
-    await update($, aggErrorA, () => error ?? null)
+    await update($, aggErrorA, () => result.error ?? null)
 
     const history = pushSnapshot(await read($, historyA), plan, now)
     await update($, historyA, () => history)
     await $.store.set('history', history)
 
     await checkAlerts($, settings, plan, agg ?? (await read($, aggA)), history, now)
-
-    // What the last refresh saw, for troubleshooting.
-    try {
-      const home = $.plugin.root.split('/.claude/')[0]
-      await $.fs.write(
-        `${home}/.claude/token-dashboard/status.json`,
-        JSON.stringify({ at: now, tools: toolTrace, plan: plan.source, sessions: sessions.status, sessionRows: sessions.rows.length, cwdProjects: Object.keys(agg?.cwdProjects ?? {}).length, aggError: error ?? null }, null, 2),
-      )
-    } catch {
-      // diagnostics are best effort
-    }
   } finally {
     busy = false
     await update($, refreshingA, () => false)
+  }
+  // A first scan spreads over several refreshes: carry on shortly.
+  if (more) {
+    followUp?.cancel()
+    followUp = $.clock.after(1500, () => void refresh($))
   }
 }
 
@@ -241,15 +440,6 @@ function readings(settings: Settings, plan: Plan | null, agg: Aggregate | null, 
   return out
 }
 
-async function notifyOs($: $T, title: string, body: string) {
-  const q = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  try {
-    await $.process.run(['/usr/bin/osascript', '-e', `display notification "${q(body)}" with title "${q(title)}"`], { timeoutMs: 5000 })
-  } catch {
-    // not macOS, or notifications blocked: the toast still showed
-  }
-}
-
 async function checkAlerts($: $T, settings: Settings, plan: Plan | null, agg: Aggregate | null, history: Snapshot[], now: number) {
   const list = readings(settings, plan, agg, history, now)
   const sent = ((await $.store.get('alerts')) ?? {}) as Record<string, { period: string; level: Level }>
@@ -261,7 +451,6 @@ async function checkAlerts($: $T, settings: Settings, plan: Plan | null, agg: Ag
     if (RANK[level] > RANK[prevLevel]) {
       const msg = `${r.label} usage at ${fmtPct(r.pct)}${level === 'red' ? ' — critical' : ''}`
       $.ui.toast(`${level === 'red' ? '🔴' : '🟠'} ${msg}${r.detail ? ` (${r.detail})` : ''}`, { timeoutMs: 12_000 })
-      if (settings.osNotify) await notifyOs($, 'Claude usage', `${msg}${r.detail ? `. ${r.detail}` : ''}`)
     }
     if (!prev || prev.period !== r.period || prev.level !== level) {
       sent[r.id] = { period: r.period, level }
@@ -304,12 +493,6 @@ async function closeDashboard($: $T) {
   await $.ui.close({ id: PANE })
 }
 
-async function openSession($: $T, row: SessionRow) {
-  if (!row.link) return $.ui.toast('This session has no app link (links are turned off for your organization).')
-  const r = await $.process.run(['/usr/bin/open', row.link], { timeoutMs: 10_000 })
-  if (r.exitCode !== 0) $.ui.toast(`Could not open ${row.title}`)
-}
-
 // ---------------------------------------------------------------- register
 
 export const register: Register = on => {
@@ -322,6 +505,16 @@ export const register: Register = on => {
     if (collapsed) await update($, collapsedA, () => collapsed)
     const colors = (await $.store.get('modelColors')) as Record<string, string> | undefined
     if (colors) await update($, colorsA, () => colors)
+    // This release's version from the manifest, and its date from the changelog.
+    try {
+      const manifest = JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`)) as { version?: string }
+      const version = manifest.version ?? ''
+      const log = await $.fs.read(`${$.plugin.root}/CHANGELOG.md`)
+      const released = new RegExp(`## ${version.replace(/\./g, '\\.')} — (\\d{4}-\\d{2}-\\d{2})`).exec(log)?.[1] ?? ''
+      await update($, aboutA, () => ({ version, released }))
+    } catch {
+      // shown without a version
+    }
     await $.command.register({ name: 'usage-dashboard', description: 'Open the Claude usage dashboard (tokens, limits, budget, sessions)' })
     await restartTimer($)
     void refresh($)
@@ -382,7 +575,7 @@ export const register: Register = on => {
 
   // ------------------------------------------------------------ pane
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const [agg, aggError, plan, sessions, history, settings, tab, colors, refreshing, collapsedGroups] = await Promise.all([
+    const [agg, aggError, plan, sessions, history, settings, tab, colors, refreshing, collapsedGroups, about] = await Promise.all([
       read($, aggA),
       read($, aggErrorA),
       read($, planA),
@@ -393,13 +586,13 @@ export const register: Register = on => {
       read($, colorsA),
       read($, refreshingA),
       read($, collapsedA),
+      read($, aboutA),
     ])
     const now = await $.clock.now()
-    return drawPane($.ui.resolve(e), e.surface, e.props.bodyColumns, { agg, aggError, plan, sessions, history, settings, tab, colors, refreshing, collapsedGroups, now }, {
+    return drawPane($.ui.resolve(e), e.surface, e.props.bodyColumns, { agg, aggError, plan, sessions, history, settings, tab, colors, refreshing, collapsedGroups, about, now }, {
       refresh: ask => void refresh($, ask),
       setTab: id => void update($, tabA, () => id),
       saveSettings: patch => void saveSettings($, patch),
-      openSession: row => void openSession($, row),
       rearm: () => void $.store.delete('alerts').then(() => refresh($)),
       close: () => void closeDashboard($),
       setCollapsed: groups =>

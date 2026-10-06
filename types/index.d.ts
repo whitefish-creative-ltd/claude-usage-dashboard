@@ -43,6 +43,10 @@ export type Aggregate = {
   sessions?: (RankedRow & { project: string })[]
   /** Claude Desktop's own session records: sidebar title and the Claude Code ids it holds. */
   desktopSessions?: { id: string; title: string; cliIds: string[]; isArchived: boolean }[]
+  /** History files too large to read (the plugin reads whole files). */
+  skippedFiles?: number
+  /** True while a first scan is still working through older history. */
+  isScanning?: boolean
   /** Which project each session folder belongs to (when asked with --cwds-stdin). */
   cwdProjects?: Record<string, string>
 }
@@ -97,7 +101,6 @@ export type Settings = {
   refreshSeconds: number
   /** Refresh a few seconds after each Claude response. */
   refreshOnResponse: boolean
-  osNotify: boolean
   statusLine: boolean
   /** The slim usage bar above the prompt, with a button that opens the dashboard. */
   showBand: boolean
@@ -122,6 +125,8 @@ declare module 'claude-code' {
       bandDismissed: string
       /** Sidebar groups folded shut on the Projects tab. */
       collapsedGroups: string[]
+      /** This release's version and date, read from plugin.json and CHANGELOG.md. */
+      about: { version: string; released: string }
     }
   }
 }

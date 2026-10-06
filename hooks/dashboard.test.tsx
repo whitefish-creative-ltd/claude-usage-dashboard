@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 import type { Aggregate, Plan, Snapshot } from '../types'
 import { bars } from './charts'
+import { emptyScan, ingest, projectCandidates, projectName, summarize } from './scanner'
 import { DAY, DEFAULT_SETTINGS, NO_SESSION, allowanceAt, allowanceSteps, assignColors, groupSessionUsage, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
@@ -138,23 +139,74 @@ describe('logic', () => {
   })
 })
 
-function richAgg(): Aggregate {
-  const a = agg()
-  const row = (name: string, n: number) => ({ name, session: bucket(n / 2), today: bucket(n), week: bucket(n * 4), fourteenDays: bucket(n * 10), byModel: { 'claude-opus-5-5': n * 3, 'claude-haiku-4-5-20251001': n } })
-  a.hourly = Array.from({ length: 24 }, (_, i) => ({ t: NOW - (23 - i) * 3600_000, byModel: { 'claude-opus-5-5': i * 10 }, ...bucket(i * 10) }))
-  a.projects = [row('TerraVitae', 900), row('ClearLoop', 300)]
-  a.models = [row('claude-opus-5-5', 900), row('claude-haiku-4-5-20251001', 100)]
-  a.entrypoints = [row('claude-desktop', 900), row('cli', 50)]
-  a.heatmap = Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => d * h))
-  return a
+// A fake computer: one project with one history file, and the desktop app's record of its session.
+const HOME = '/home/u'
+const PROJECTS = `${HOME}/.claude/projects`
+const DESKTOP = `${HOME}/Library/Application Support/Claude/claude-code-sessions`
+
+function line(id: string, sid: string, at: string, cwd: string, read: number) {
+  return JSON.stringify({
+    type: 'assistant',
+    sessionId: sid,
+    cwd,
+    entrypoint: 'claude-desktop',
+    timestamp: at,
+    message: { id, model: 'claude-opus-5-5', role: 'assistant', usage: { input_tokens: 10, output_tokens: 90, cache_creation_input_tokens: 0, cache_read_input_tokens: read } },
+  })
+}
+const HISTORY = [
+  line('m1', 'c1', '2026-10-06T09:00:00Z', '/x/TerraVitae', 1000),
+  line('m1', 'c1', '2026-10-06T09:00:00Z', '/x/TerraVitae', 1000), // same message written twice
+  line('m2', 'c1', '2026-10-06T11:30:00Z', '/x/TerraVitae/site', 2000),
+  line('m3', 'c2', '2026-10-05T15:00:00Z', '/x/ClearLoop', 4000),
+].join('\n') + '\n'
+
+type On = Parameters<Parameters<typeof test>[1]>[1]
+
+function fakeComputer(on: On) {
+  mock.clock(on, { now: NOW })
+  mock.store(on)
+  on('env.get', ($, e) => ({ value: e.name === 'HOME' ? HOME : undefined }) as never)
+  const entry = (name: string, kind: 'file' | 'dir', size = 0) => ({ name, kind, size, mtimeMs: NOW - 60_000, isLink: false })
+  const dirs: Record<string, ReturnType<typeof entry>[]> = {
+    [PROJECTS]: [entry('-x-TerraVitae', 'dir')],
+    [`${PROJECTS}/-x-TerraVitae`]: [entry('c1.jsonl', 'file', HISTORY.length)],
+    [DESKTOP]: [entry('acct', 'dir')],
+    [`${DESKTOP}/acct`]: [entry('org', 'dir')],
+    [`${DESKTOP}/acct/org`]: [entry('local_s1.json', 'file', 100), entry('local_s2.json', 'file', 100)],
+  }
+  const files: Record<string, string> = {
+    [`${PROJECTS}/-x-TerraVitae/c1.jsonl`]: HISTORY,
+    [`${DESKTOP}/acct/org/local_s1.json`]: JSON.stringify({ sessionId: 's1', title: 'Terra Vitae - Build', cliSessionId: 'c1' }),
+    [`${DESKTOP}/acct/org/local_s2.json`]: JSON.stringify({ sessionId: 's2', title: '1.8.0', cliSessionId: 'c2', priorCliSessionIds: [] }),
+  }
+  on('fs.list', ($, e) => (dirs[e.path] ? { value: dirs[e.path] } : { deny: 'no such folder' }) as never)
+  on('fs.read', ($, e) => (e.path.endsWith('plugin.json') ? { value: '{"version":"9.9.9"}' } : e.path.endsWith('CHANGELOG.md') ? { value: '## 9.9.9 — 2026-10-06\n' } : files[e.path] !== undefined ? { value: files[e.path] } : { deny: 'no such file' }) as never)
+  on('fs.exists', ($, e) => ({ value: e.path === '/x/TerraVitae/.git' }) as never)
 }
 
+describe('scanner', () => {
+  test('reads history into buckets once, names projects by repository, sums per session', async () => {
+    const state = emptyScan()
+    const file = { len: 0, size: 0, mtime: 0, readAt: 0, ids: [] as string[] }
+    const cwds = ingest(state, '/p/c1.jsonl', HISTORY, file, NOW - 15 * DAY)
+    expect([...cwds].sort()).toEqual(['/x/ClearLoop', '/x/TerraVitae', '/x/TerraVitae/site'])
+    state.cwdProject['/x/TerraVitae'] = projectName('/x/TerraVitae', '/x/TerraVitae')
+    state.cwdProject['/x/TerraVitae/site'] = projectName('/x/TerraVitae/site', '/x/TerraVitae')
+    state.cwdProject['/x/ClearLoop'] = projectName('/x/ClearLoop', undefined)
+    const s = summarize(state, NOW, NOW - 2 * DAY, NOW - 2 * 3_600_000)
+    expect(s.totals.fourteenDays.messages).toBe(3) // the duplicate line counted once
+    expect(s.totals.today.total).toBe(100 + 1000 + 100 + 2000)
+    expect(s.totals.session.total).toBe(2100) // only m2 is inside the 5-hour window
+    expect(s.projects.map(p => p.name)).toEqual(['ClearLoop', 'TerraVitae']) // by tokens this week
+    expect(s.sessions?.find(x => x.name === 'c1')?.project).toBe('TerraVitae')
+    expect(projectCandidates('/x/App/.claude/worktrees/agent-1/src')[0]).toBe('/x/App')
+  })
+})
+
 describe('pane', () => {
-  test('draws every tab with data on terminal and desktop', async ($, on) => {
-    mock.clock(on, { now: NOW })
-    mock.store(on)
-    on('fs.exists', () => ({ value: true }))
-    on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(richAgg()), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  test('draws every tab from a scanned history on terminal and desktop', async ($, on) => {
+    fakeComputer(on)
     on('tool.list', () => ({ value: [] }))
     on('session.usage', () => ({ value: {
       startedAt: 0,
@@ -175,7 +227,6 @@ describe('pane', () => {
       await ui.press({ key: 'refresh' })
       expect(await ui.find({ type: 'Text', text: /Plan usage limits/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /Claude usage overview/ })).toBeDefined()
-      if (surface === 'terminal') expect(await ui.find({ type: 'Text', text: /Created by WhiteFish/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /85% used/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /Claude Code tokens on this computer/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^Since / })).toBeDefined()
@@ -188,27 +239,14 @@ describe('pane', () => {
     }
   })
 
-  test('shows sidebar group names on the projects tab', async ($, on) => {
-    mock.clock(on, { now: NOW })
-    mock.store(on)
-    const srow = (name: string, project: string, week: number) => ({ name, project, session: bucket(0), today: bucket(0), week: bucket(week), fourteenDays: bucket(week), byModel: { 'claude-opus-5-5': week } })
-    const a = {
-      ...richAgg(),
-      sessions: [srow('c1', 'TerraVitae', 10), srow('c2', 'ClearLoop', 50)],
-      desktopSessions: [
-        { id: 's1', title: 'Terra Vitae - Build', cliIds: ['c1'], isArchived: false },
-        { id: 's2', title: '1.8.0', cliIds: ['c2'], isArchived: false },
-      ],
-    }
-    on('fs.exists', () => ({ value: true }))
-    on('fs.write', () => ({ value: undefined }) as never)
-    on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(a), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
-    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__list_sessions', description: '' }, { name: 'mcp__ccd_session_mgmt__get_session', description: '' }] }) as never)
-    on('tool.check', () => ({ decision: 'allow' }))
+  test('shows projects by desktop session name under sidebar groups', async ($, on) => {
+    fakeComputer(on)
     const rows = [
       { sessionId: 's1', title: 'a', cwd: '/x/TerraVitae', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', group: { name: 'Other Stuff' }, remoteControlActive: false },
       { sessionId: 's2', title: 'b', cwd: '/x/ClearLoop', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', group: { name: 'Clearloop' }, remoteControlActive: false },
     ]
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__list_sessions', description: '' }, { name: 'mcp__ccd_session_mgmt__get_session', description: '' }] }) as never)
+    on('tool.check', () => ({ decision: 'allow' }))
     // The list excludes the current session (s2); get_session('self') supplies it.
     on('tool.call', { tool: 'mcp__ccd_session_mgmt__list_sessions' }, () => ({ result: JSON.stringify(rows.slice(0, 1)), text: JSON.stringify(rows.slice(0, 1)) }) as never)
     on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_session' }, () => ({ result: JSON.stringify(rows[1]), text: JSON.stringify(rows[1]) }) as never)
@@ -217,16 +255,14 @@ describe('pane', () => {
       const ui = await $.ui.mount({ plugin: 'token-dashboard', surface, component: 'Pane', requestId: 'token-dashboard', props: { title: 'x', isFocused: true, bodyColumns: 100, placement: 'dock' } })
       await ui.press({ key: 'refresh' })
       await ui.press({ key: 'tab-projects' })
-      expect(await ui.find({ type: 'Text', text: /^Clearloop$/ })).toBeDefined()
-      expect(await ui.find({ key: 'group-toggle-Clearloop' })).toBeDefined()
-      expect(await ui.find({ key: 'group-toggle-Other Stuff' })).toBeDefined()
-      expect(await ui.find({ key: 'p-s2' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^Other Stuff$/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^Terra Vitae - Build$/ })).toBeDefined()
-      await ui.press({ key: 'group-toggle-Clearloop' })
-      expect(await ui.find({ key: 'p-s2' })).toBeUndefined()
       expect(await ui.find({ key: 'p-s1' })).toBeDefined()
+      expect(await ui.find({ key: 'group-toggle-Other Stuff' })).toBeDefined()
+      await ui.press({ key: 'group-toggle-Other Stuff' })
+      expect(await ui.find({ key: 'p-s1' })).toBeUndefined()
       await ui.press({ key: 'groups-expand' })
-      expect(await ui.find({ key: 'p-s2' })).toBeDefined()
+      expect(await ui.find({ key: 'p-s1' })).toBeDefined()
       await ui.unmount()
     }
   })
@@ -244,10 +280,9 @@ describe('pane', () => {
       })
       expect(await ui.find({ key: 'tab-settings' })).toBeDefined()
       await ui.press({ key: 'tab-settings' })
-      expect(await ui.find({ key: 'osNotify' })).toBeDefined()
+      expect(await ui.find({ key: 'statusLine' })).toBeDefined()
       expect(await ui.find({ key: 'close-dashboard' })).toBeDefined()
       expect(await ui.find({ key: 'refreshOnResponse' })).toBeDefined()
-      expect(await ui.find({ type: 'Link' })).toBeDefined()
       await ui.press({ key: 'tab-overview' })
       await ui.unmount()
     }
