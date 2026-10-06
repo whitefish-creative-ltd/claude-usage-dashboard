@@ -20,7 +20,9 @@ import {
   parseAppPlan,
   parseSessions,
   planFromRateLimits,
+  noLowerThan,
   pushSnapshot,
+  stableReset,
   relTime,
   todayVsBudget,
 } from './logic'
@@ -149,12 +151,18 @@ async function loadPlan($: $T, ask: boolean, now: number, useApp = true): Promis
     await $.store.set('lastPlan', app)
     return { plan: app, needsAccess: false }
   }
+  const needsAccess = r.status === 'needs-access'
+  const stored = (await $.store.get('lastPlan')) as Plan | undefined
+  // Saved before reset times were rounded: round them now so periods compare.
+  const last = stored ? { ...stored, windows: stored.windows.map(w => ({ ...w, resetsAt: stableReset(w.resetsAt) })) } : undefined
+  // A brief failure: the app's last reading is better than this session's own,
+  // which is only as fresh as this session's last reply.
+  if (last?.windows.length && now - last.at < 15 * 60_000) return { plan: last, needsAccess }
   const usage = await $.session.usage()
   const own = planFromRateLimits(usage.rateLimits, now)
-  if (own.windows.length) return { plan: { ...own, plan: app?.plan }, needsAccess: r.status === 'needs-access' }
-  const last = (await $.store.get('lastPlan')) as Plan | undefined
-  if (last?.windows.length) return { plan: { ...last, note: `Last reading ${relTime(last.at, now)}; the app can’t read your limits right now.` }, needsAccess: r.status === 'needs-access' }
-  return { plan: app ?? own, needsAccess: r.status === 'needs-access' }
+  if (own.windows.length) return { plan: { ...noLowerThan(own, last), plan: app?.plan }, needsAccess }
+  if (last?.windows.length) return { plan: { ...last, note: `Last reading ${relTime(last.at, now)}; the app can’t read your limits right now.` }, needsAccess }
+  return { plan: app ?? own, needsAccess }
 }
 
 /** Sessions open on this computer: Claude Code's live status files (never the .key files beside them). */

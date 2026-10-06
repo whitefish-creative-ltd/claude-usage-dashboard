@@ -88,6 +88,19 @@ export function assignColors(prev: Record<string, string>, models: string[]): Re
 
 type RawWindow = { label?: string; percentUsed?: number; resetsAt?: string }
 
+/**
+ * A reset time rounded to the minute. The app works its reset times out afresh on
+ * each reading, so they drift by fractions of a second (01:59:59.555, 02:00:00.811…);
+ * rounded, one limit period keeps one identity for snapshots, the midnight baseline
+ * and alerts.
+ */
+export function stableReset(iso: string | undefined): string | undefined {
+  if (!iso) return undefined
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return iso
+  return new Date(Math.round(t / 60_000) * 60_000).toISOString()
+}
+
 export function windowKind(label: string): string {
   const l = label.toLowerCase()
   if (l.includes('5-hour') || l.includes('five')) return 'five_hour'
@@ -110,7 +123,7 @@ export function parseAppPlan(text: string, now: number): Plan | null {
     kind: windowKind(w.label ?? ''),
     label: w.label ?? '',
     percentUsed: Number(w.percentUsed ?? 0),
-    resetsAt: w.resetsAt,
+    resetsAt: stableReset(w.resetsAt),
   }))
   return { source: 'app', plan: p.plan, windows, extraUsageEnabled: p.extraUsage?.enabled, at: now }
 }
@@ -119,7 +132,7 @@ export function planFromRateLimits(limits: { kind: string; percentUsed: number; 
   const label: Record<string, string> = { five_hour: '5-hour limit', seven_day: 'Weekly · all models' }
   return {
     source: limits.length ? 'session' : 'none',
-    windows: limits.map(l => ({ kind: l.kind, label: label[l.kind] ?? l.kind, percentUsed: l.percentUsed, resetsAt: l.resetsAt })),
+    windows: limits.map(l => ({ kind: l.kind, label: label[l.kind] ?? l.kind, percentUsed: l.percentUsed, resetsAt: stableReset(l.resetsAt) })),
     note: limits.length ? undefined : 'No plan reading yet (it arrives with the next model response).',
     at: now,
   }
@@ -215,7 +228,8 @@ export function weekStartOf(plan: Plan | null, agg: Aggregate | null): number | 
 function weekAt(history: Snapshot[], resetsAt: string, t: number, periodStart: number): number | undefined {
   if (t <= periodStart) return 0
   let best: Snapshot | undefined
-  for (const s of history) if (s.wr === resetsAt && s.t <= t && (!best || s.t > best.t)) best = s
+  const key = stableReset(resetsAt)
+  for (const s of history) if (stableReset(s.wr) === key && s.t <= t && (!best || s.t > best.t)) best = s
   return best?.w
 }
 
@@ -237,7 +251,7 @@ export function dailyUsage(agg: Aggregate | null, history: Snapshot[], plan: Pla
     const end = Math.min(t + DAY, now)
     const a = resetsAt ? weekAt(history, resetsAt, t, start) : undefined
     const b = resetsAt ? weekAt(history, resetsAt, end, start) : undefined
-    const exact = a !== undefined && b !== undefined && (end >= now || history.some(x => x.wr === resetsAt && x.t >= end - 15 * 60_000))
+    const exact = a !== undefined && b !== undefined && (end >= now || history.some(x => stableReset(x.wr) === stableReset(resetsAt) && x.t >= end - 15 * 60_000))
     const tokens = tokensAt(t)
     const pct = exact ? Math.max(0, (end >= now ? weekPct : (b as number)) - (a as number)) : periodTokens > 0 ? weekPct * (tokens / periodTokens) : 0
     return { index: i, t, pct, isEstimate: !exact, isToday: now >= t && now < t + DAY, isWorkDay: i < Math.min(7, Math.max(1, s.workDays)), tokens }
@@ -284,8 +298,26 @@ export function pushSnapshot(history: Snapshot[], plan: Plan | null, now: number
   const five = findWindow(plan, 'five_hour')?.percentUsed ?? 0
   const last = history[history.length - 1]
   const keep = history.filter(s => now - s.t < 9 * DAY)
-  if (last && last.w === week.percentUsed && last.wr === week.resetsAt && last.f === five && now - last.t < 15 * 60_000) return keep
-  return [...keep, { t: now, w: week.percentUsed, wr: week.resetsAt, f: five }].slice(-3000)
+  const wr = stableReset(week.resetsAt) ?? week.resetsAt
+  if (last && last.w === week.percentUsed && stableReset(last.wr) === wr && last.f === five && now - last.t < 15 * 60_000) return keep
+  return [...keep, { t: now, w: week.percentUsed, wr, f: five }].slice(-3000)
+}
+
+/**
+ * When the app can't read the limits, the session's own last reading stands in, but
+ * it can lag the account (it's from this session's last reply). A limit only rises
+ * until it resets, so in the same period the higher of the two readings is the true
+ * one: never show less than the app last said.
+ */
+export function noLowerThan(fallback: Plan, last: Plan | undefined): Plan {
+  if (!last) return fallback
+  return {
+    ...fallback,
+    windows: fallback.windows.map(w => {
+      const prev = last.windows.find(p => p.kind === w.kind && stableReset(p.resetsAt) === stableReset(w.resetsAt))
+      return prev && prev.percentUsed > w.percentUsed ? { ...w, percentUsed: prev.percentUsed } : w
+    }),
+  }
 }
 
 // ---------- projects by sidebar group ----------

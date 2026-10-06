@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1 — 2026-10-06
+
+- Fixed the daily budget jumping between two values (e.g. 77% ↔ 84%): when the app's usage reading dropped out for a moment, the dashboard used this session's own reading, which can lag a point behind. It now uses the app's last reading (if under 15 minutes old), and a fallback never shows less than the app last said for the same week
+- Fixed reset times that drift by fractions of a second being treated as different weeks, which made today's figure switch between exact and estimated, saved far more readings than needed, and could repeat alerts
+
 ## 1.7.0 — 2026-10-06
 
 - Opening the dashboard asks for app access straight away when it isn't connected (once a session, and not after you've disconnected), instead of waiting for you to find Connect

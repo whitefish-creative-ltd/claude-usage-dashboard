@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Aggregate, Plan, Snapshot } from '../types'
 import { bars } from './charts'
 import { emptyScan, ingest, projectCandidates, projectName, summarize } from './scanner'
-import { DAY, DEFAULT_SETTINGS, NO_SESSION, allowanceAt, allowanceSteps, assignColors, groupSessionUsage, splitSessions, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
+import { DAY, DEFAULT_SETTINGS, NO_SESSION, allowanceAt, allowanceSteps, assignColors, groupSessionUsage, noLowerThan, planFromRateLimits, pushSnapshot, splitSessions, stableReset, dailyBudget, dailyUsage, levelOf, parseAppPlan, prettyModel, todayVsBudget } from './logic'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 const TODAY = Date.parse('2026-10-06T00:00:00Z')
@@ -147,6 +147,38 @@ describe('logic', () => {
     expect(split.waiting.map(r => r.title)).toEqual(['d2', 'Scratch'])
     expect(split.remote.map(r => r.title)).toEqual(['d2'])
     expect(split.recent.map(r => r.title)).toEqual(['d3']) // d4 is older than the window
+  })
+
+  test('reset times that drift by fractions of a second keep one identity', async () => {
+    expect(stableReset('2026-10-13T01:59:59.555Z')).toBe('2026-10-13T02:00:00.000Z')
+    expect(stableReset('2026-10-13T02:00:00.811Z')).toBe('2026-10-13T02:00:00.000Z')
+    // the same reading with a drifting reset time adds no new snapshot
+    const plan = (ms: string, w: number) => planFromRateLimits([{ kind: 'seven_day', percentUsed: w, resetsAt: `2026-10-13T0${ms}Z` }], NOW)
+    let h = pushSnapshot([], plan('1:59:59.555', 12), NOW)
+    h = pushSnapshot(h, plan('2:00:00.811', 12), NOW + 60_000)
+    expect(h.length).toBe(1)
+  })
+
+  test('today stays exact when the reset time drifts between readings', async () => {
+    const week = (resetsAt: string, w: number) => ({ source: 'app' as const, windows: [{ kind: 'seven_day', label: '', percentUsed: w, resetsAt }], at: NOW })
+    const history: Snapshot[] = [
+      { t: TODAY - 60_000, w: 22, wr: '2026-10-09T00:00:00.431Z', f: 0 }, // just before midnight, odd milliseconds
+      { t: TODAY + 3_600_000, w: 30, wr: '2026-10-08T23:59:59.602Z', f: 0 },
+    ]
+    for (const resetsAt of ['2026-10-09T00:00:00.811Z', '2026-10-08T23:59:59.555Z']) {
+      const today = todayVsBudget(dailyUsage(agg(), history, week(resetsAt, 40), NOW), DEFAULT_SETTINGS)
+      expect(today?.isEstimate).toBe(false)
+      expect(today?.used).toBe(18)
+    }
+  })
+
+  test("a session's own lagging reading never shows less than the app last said", async () => {
+    const last = { source: 'app' as const, windows: [{ kind: 'seven_day', label: '', percentUsed: 12, resetsAt: '2026-10-13T02:00:00.000Z' }], at: NOW }
+    const own = planFromRateLimits([{ kind: 'seven_day', percentUsed: 11, resetsAt: '2026-10-13T02:00:00Z' }], NOW)
+    expect(noLowerThan(own, last).windows[0]?.percentUsed).toBe(12)
+    // after a reset the new period starts again from the session's reading
+    const next = planFromRateLimits([{ kind: 'seven_day', percentUsed: 1, resetsAt: '2026-10-20T02:00:00Z' }], NOW)
+    expect(noLowerThan(next, last).windows[0]?.percentUsed).toBe(1)
   })
 
   test('charts produce bounded svg', async () => {
@@ -306,6 +338,26 @@ describe('pane', () => {
       expect(await ui.find({ key: 'disconnect' })).toBeDefined()
       await ui.unmount()
     }
+  })
+
+  test('the weekly figure holds steady when the app reading drops out and the session lags', async ($, on) => {
+    fakeComputer(on)
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__get_usage', description: '' }] }) as never)
+    on('tool.check', () => ({ decision: 'allow' }))
+    const unavailable = JSON.stringify({ plan: { status: 'unavailable', note: 'could not be read just now' } })
+    let n = 0
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_usage' }, () => {
+      const text = n++ % 2 === 0 ? APP : unavailable // 40% weekly, then a drop-out
+      return { result: text, text } as never
+    })
+    on('session.usage', () => ({ value: { startedAt: 0, context: { contextWindow: 1000000 }, rateLimits: [{ kind: 'seven_day', percentUsed: 35, resetsAt: '2026-10-09T00:00:00Z' }] } }) as never)
+    const ui = await $.ui.mount({ plugin: 'whitefish-usage-dashboard', surface: 'desktop', component: 'Pane', requestId: 'whitefish-usage-dashboard', props: { title: 'x', isFocused: true, bodyColumns: 100, placement: 'dock' } })
+    for (let i = 0; i < 4; i++) {
+      await ui.press({ key: 'refresh' })
+      expect(await ui.find({ type: 'Text', text: /^40% used$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^35% used$/ })).toBeUndefined()
+    }
+    await ui.unmount()
   })
 
   test('opening the dashboard asks for app access once when it is not connected', async ($, on) => {
