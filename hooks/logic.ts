@@ -181,7 +181,7 @@ export type DayUsage = { index: number; t: number; pct: number; isEstimate: bool
 export function weekStartOf(plan: Plan | null, agg: Aggregate | null): number | undefined {
   const week = findWindow(plan, 'seven_day')
   if (week?.resetsAt) return Date.parse(week.resetsAt) - 7 * DAY
-  return agg?.weekStart
+  return undefined
 }
 
 /** Weekly-window percent at time `t`, from the last snapshot at or before it in the same window. */

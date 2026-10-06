@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1 — 2026-10-06
+
+- Plan limits no longer go blank when the app can't read them for a moment: the dashboard uses this session's own reading, or the last good one with its age
+- The daily budget waits for a weekly reset time instead of guessing the week (which could wrongly call today a day off)
+
 ## 1.4.0 — 2026-10-06
 
 - Renamed to **WhiteFish Usage Dashboard** (plugin `whitefish-usage-dashboard`); existing installs of `token-dashboard` move across automatically

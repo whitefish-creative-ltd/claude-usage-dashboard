@@ -133,14 +133,24 @@ async function callListGroups($: $T, ask: boolean): Promise<ToolResult> {
   }
 }
 
+/**
+ * The plan's usage limits: the app's usage card first, then this session's own
+ * last reading, then the last good reading kept from an earlier refresh. The app
+ * sometimes can't read the limits for a minute; the dashboard shouldn't go blank.
+ */
 async function loadPlan($: $T, ask: boolean, now: number): Promise<{ plan: Plan; needsAccess: boolean }> {
   const r = await callGetUsage($, ask)
-  if (r.text) {
-    const p = parseAppPlan(r.text, now)
-    if (p && (p.windows.length || p.note)) return { plan: p, needsAccess: false }
+  const app = r.text ? parseAppPlan(r.text, now) : null
+  if (app && app.windows.length) {
+    await $.store.set('lastPlan', app)
+    return { plan: app, needsAccess: false }
   }
   const usage = await $.session.usage()
-  return { plan: planFromRateLimits(usage.rateLimits, now), needsAccess: r.status === 'needs-access' }
+  const own = planFromRateLimits(usage.rateLimits, now)
+  if (own.windows.length) return { plan: { ...own, plan: app?.plan }, needsAccess: r.status === 'needs-access' }
+  const last = (await $.store.get('lastPlan')) as Plan | undefined
+  if (last?.windows.length) return { plan: { ...last, note: `Last reading ${relTime(last.at, now)}; the app can’t read your limits right now.` }, needsAccess: r.status === 'needs-access' }
+  return { plan: app ?? own, needsAccess: r.status === 'needs-access' }
 }
 
 async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions> {

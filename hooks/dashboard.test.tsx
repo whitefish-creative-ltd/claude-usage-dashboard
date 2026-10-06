@@ -207,7 +207,11 @@ describe('scanner', () => {
 describe('pane', () => {
   test('draws every tab from a scanned history on terminal and desktop', async ($, on) => {
     fakeComputer(on)
-    on('tool.list', () => ({ value: [] }))
+    // The app's usage card can't read the limits right now: the session's own figures stand in.
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__get_usage', description: '' }] }) as never)
+    on('tool.check', () => ({ decision: 'allow' }))
+    const unavailable = JSON.stringify({ plan: { status: 'unavailable', plan: 'Max', note: 'Plan limits apply, but the numbers could not be read just now.' } })
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_usage' }, () => ({ result: unavailable, text: unavailable }) as never)
     on('session.usage', () => ({ value: {
       startedAt: 0,
       context: { contextWindow: 1000000 },
