@@ -34,6 +34,8 @@ export type PaneActions = {
   setTab: (tab: Tab) => void
   saveSettings: (patch: Partial<Settings>) => void
   rearm: () => void
+  connect: () => void
+  disconnect: () => void
   close: () => void
   setCollapsed: (groups: string[]) => void
 }
@@ -231,6 +233,9 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
   const today = todayVsBudget(days, settings)
   const modelWindows = plan?.windows.filter(w => w.kind.startsWith('model:')) ?? []
   const needsAccess = sessions?.status === 'needs-access'
+  // Connected when the app's plan reading and session list both came through.
+  const access: 'on' | 'partial' | 'off' | 'none' =
+    !settings.appAccess ? 'off' : sessions?.status === 'ok' && plan?.source === 'app' ? 'on' : sessions?.status === 'ok' || plan?.source === 'app' ? 'partial' : 'none'
 
   const limits = section(
     'Plan usage limits',
@@ -250,7 +255,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
     needsAccess ? (
       <Box flexDirection="row" gap={2} alignItems="center">
         <Text dimColor>Per-model limits and your session list need one-time access.</Text>
-        <Button key="connect" label="Connect" variant="primary" onPress={() => act.refresh(true)} />
+        <Button key="connect" label="Connect" variant="primary" onPress={() => act.connect()} />
       </Box>
     ) : null,
   )
@@ -479,7 +484,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           needsAccess ? (
             <Box flexDirection="row" gap={2} alignItems="center">
               <Text dimColor>Connect to show your sidebar groups.</Text>
-              <Button key="connect" label="Connect" variant="primary" onPress={() => act.refresh(true)} />
+              <Button key="connect" label="Connect" variant="primary" onPress={() => act.connect()} />
             </Box>
           ) : null,
         )}
@@ -576,7 +581,7 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
         {needsAccess ? (
           <Box flexDirection="row" gap={2} alignItems="center">
             <Text dimColor>Connect to add titles, groups, Remote Control and recent sessions.</Text>
-            <Button key="connect" label="Connect" variant="primary" onPress={() => act.refresh(true)} />
+            <Button key="connect" label="Connect" variant="primary" onPress={() => act.connect()} />
           </Box>
         ) : null}
       </Box>
@@ -637,7 +642,24 @@ export function drawPane(els: ElementTable, surface: string, bodyColumns: number
           'Data',
           null,
           field('Recent sessions', 'Closed sessions active within this time.', pick('awaiting', settings.awaitingHours, [1, 4, 12, 24, 72], n => `${n}h`, v => act.saveSettings({ awaitingHours: v }))),
-          field('App access', 'Plan limits per model and your session list.', <Button key="connect" label="Connect" onPress={() => act.refresh(true)} />),
+          field(
+            'App access',
+            access === 'on'
+              ? 'Connected: plan limits per model, session titles and sidebar groups come from the Claude app.'
+              : access === 'off'
+                ? 'Off: the dashboard uses only this session’s limit readings and Claude Code’s local files.'
+                : access === 'partial'
+                  ? 'Partly connected: allow the rest for per-model limits and your session list.'
+                  : 'Not connected: allow it for per-model limits, session titles and sidebar groups.',
+            access === 'on' ? (
+              <Box flexDirection="row" gap={1} alignItems="center">
+                <Text color="#199e70">● Connected</Text>
+                <Button key="disconnect" label="Disconnect" onPress={() => act.disconnect()} />
+              </Box>
+            ) : (
+              <Button key="connect" label="Connect" variant="primary" onPress={() => act.connect()} />
+            ),
+          ),
         )}
         {section(
           'Dashboard',

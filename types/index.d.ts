@@ -94,7 +94,8 @@ export type LiveSession = {
 }
 
 export type Sessions = {
-  status: 'ok' | 'needs-access' | 'unavailable'
+  /** `off`: the person turned app access off in Settings. */
+  status: 'ok' | 'needs-access' | 'unavailable' | 'off'
   rows: SessionRow[]
   /** Sessions open on this computer right now. */
   live?: LiveSession[]
@@ -119,6 +120,8 @@ export type Settings = {
   statusLine: boolean
   /** The slim usage bar above the prompt, with a button that opens the dashboard. */
   showBand: boolean
+  /** Use the Claude Desktop app's tools (plan limits per model, session titles and groups). */
+  appAccess: boolean
   /** Closed from Settings: no pane, bar or status line until /usage-dashboard-wfc opens it again. */
   isClosed: boolean
 }

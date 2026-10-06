@@ -138,8 +138,8 @@ async function callListGroups($: $T, ask: boolean): Promise<ToolResult> {
  * last reading, then the last good reading kept from an earlier refresh. The app
  * sometimes can't read the limits for a minute; the dashboard shouldn't go blank.
  */
-async function loadPlan($: $T, ask: boolean, now: number): Promise<{ plan: Plan; needsAccess: boolean }> {
-  const r = await callGetUsage($, ask)
+async function loadPlan($: $T, ask: boolean, now: number, useApp = true): Promise<{ plan: Plan; needsAccess: boolean }> {
+  const r: ToolResult = useApp ? await callGetUsage($, ask) : { status: 'unavailable' }
   const app = r.text ? parseAppPlan(r.text, now) : null
   if (app && app.windows.length) {
     await $.store.set('lastPlan', app)
@@ -176,8 +176,9 @@ async function loadLive($: $T): Promise<LiveSession[]> {
   return out
 }
 
-async function loadSessions($: $T, ask: boolean, now: number): Promise<Sessions> {
+async function loadSessions($: $T, ask: boolean, now: number, useApp = true): Promise<Sessions> {
   const live = await loadLive($)
+  if (!useApp) return { status: 'off', live, rows: [], at: now }
   const r = await callListSessions($, ask)
   if (r.status !== 'ok' || !r.text) {
     return {
@@ -414,10 +415,10 @@ async function refresh($: $T, ask = false) {
     const now = await $.clock.now()
     const settings = await read($, settingsA)
 
-    const { plan } = await loadPlan($, ask, now)
+    const { plan } = await loadPlan($, ask, now, settings.appAccess)
     await update($, planA, () => plan)
 
-    const sessions = await loadSessions($, ask, now)
+    const sessions = await loadSessions($, ask, now, settings.appAccess)
     await update($, sessionsA, () => sessions)
 
     const result = await loadAggregate($, plan, now)
@@ -626,6 +627,11 @@ export const register: Register = on => {
     const now = await $.clock.now()
     return drawPane($.ui.resolve(e), e.surface, e.props.bodyColumns, { agg, aggError, plan, sessions, history, settings, tab, colors, refreshing, collapsedGroups, about, now }, {
       refresh: ask => void refresh($, ask),
+      connect: () => void update($, settingsA, s => ({ ...s, appAccess: true })).then(async next => {
+        await $.store.set('settings', next)
+        await refresh($, true)
+      }),
+      disconnect: () => void saveSettings($, { appAccess: false }),
       setTab: id => void update($, tabA, () => id),
       saveSettings: patch => void saveSettings($, patch),
       rearm: () => void $.store.delete('alerts').then(() => refresh($)),

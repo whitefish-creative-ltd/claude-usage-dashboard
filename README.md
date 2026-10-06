@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.5.0" src="https://img.shields.io/badge/version-1.5.0-0A4E75">
+  <img alt="Version 1.6.0" src="https://img.shields.io/badge/version-1.6.0-0A4E75">
   <img alt="Claude Code 2.1.286+" src="https://img.shields.io/badge/Claude%20Code-2.1.286%2B-569CBE">
   <img alt="macOS, Windows and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-808285">
   <a href="LICENSE"><img alt="Licence: PolyForm Internal Use 1.0.0" src="https://img.shields.io/badge/licence-PolyForm%20Internal%20Use-0A4E75"></a>
@@ -97,6 +97,7 @@ A few things worth knowing:
 | Recent sessions | 12h | How far back the Sessions tab lists closed sessions |
 | Refresh every | 1 minute | How often the figures update: 30 seconds to 30 minutes, or Manual (only when you press Refresh or open the dashboard) |
 | After each response | On | Also updates a few seconds after each Claude reply |
+| App access | Connected | Shows whether the dashboard reads plan limits and your session list from the Claude app. **Disconnect** stops it calling the app's tools; **Connect** turns them back on |
 | Close the dashboard | — | Hides the dashboard, the bar and the status line until you run `/usage-dashboard-wfc` |
 
 ## Requirements
@@ -128,7 +129,7 @@ Everything stays on your computer. Nothing is sent anywhere: the dashboard makes
 - `mcp__ccd_session_mgmt__list_sessions` and `mcp__ccd_session_mgmt__get_session` (`self`) — your sessions' titles, folders, sidebar groups and whether they're running.
 - `mcp__ccd_sidebar__list_groups` — your sidebar groups' names and order.
 
-They're called on each refresh (every minute by default; see **Settings → Refresh**). Each is checked first and skipped if it would ask your permission; pressing **Connect** calls them once with your go-ahead so you can allow them.
+They're called on each refresh (every minute by default; see **Settings → Refresh**), and never while **Settings → App access** is disconnected. Each is checked first and skipped if it would ask your permission; pressing **Connect** calls them once with your go-ahead so you can allow them.
 
 **What it hooks**
 - `session.start` — loads your settings and registers `/usage-dashboard-wfc`.

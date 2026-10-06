@@ -272,7 +272,8 @@ describe('pane', () => {
       { sessionId: 's1', title: 'a', cwd: '/x/TerraVitae', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', group: { name: 'Other Stuff' }, remoteControlActive: false },
       { sessionId: 's2', title: 'b', cwd: '/x/ClearLoop', isRunning: false, isArchived: false, lastActivityAt: '2026-10-05T00:00:00Z', group: { name: 'Clearloop' }, remoteControlActive: false },
     ]
-    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__list_sessions', description: '' }, { name: 'mcp__ccd_session_mgmt__get_session', description: '' }] }) as never)
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__list_sessions', description: '' }, { name: 'mcp__ccd_session_mgmt__get_session', description: '' }, { name: 'mcp__ccd_session_mgmt__get_usage', description: '' }] }) as never)
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_usage' }, () => ({ result: APP, text: APP }) as never)
     on('tool.check', () => ({ decision: 'allow' }))
     // The list excludes the current session (s2); get_session('self') supplies it.
     on('tool.call', { tool: 'mcp__ccd_session_mgmt__list_sessions' }, () => ({ result: JSON.stringify(rows.slice(0, 1)), text: JSON.stringify(rows.slice(0, 1)) }) as never)
@@ -294,6 +295,14 @@ describe('pane', () => {
       expect(await ui.find({ type: 'Text', text: /^Working now · 1$/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^Waiting for you · 1$/ })).toBeDefined()
       expect(keyReads).toEqual([])
+      // App access: connected, then off after Disconnect
+      await ui.press({ key: 'tab-settings' })
+      expect(await ui.find({ key: 'disconnect' })).toBeDefined()
+      await ui.press({ key: 'disconnect' })
+      expect(await ui.find({ key: 'disconnect' })).toBeUndefined()
+      expect(await ui.find({ key: 'connect' })).toBeDefined()
+      await ui.press({ key: 'connect' })
+      expect(await ui.find({ key: 'disconnect' })).toBeDefined()
       await ui.unmount()
     }
   })

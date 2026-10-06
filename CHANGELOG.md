@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0 — 2026-10-06
+
+- Settings → App access shows **● Connected** with a **Disconnect** button once the dashboard can read your plan limits and session list from the Claude app, and **Connect** only when it can't (or you've turned it off)
+- Disconnecting stops the dashboard calling the app's tools; it carries on with this session's limit readings and Claude Code's local files
+
 ## 1.5.0 — 2026-10-06
 
 - Sessions tab shows which sessions are open from Claude Code's own live status: **Working now** (Claude is replying) and **Waiting for you**, then Remote Control and **Recent** closed sessions. The app's own "running" flag missed sessions that were working

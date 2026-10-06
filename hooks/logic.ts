@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statusLine: true,
   showBand: true,
   isClosed: false,
+  appAccess: true,
 }
 
 /** Categorical slots (dataviz reference palette), assigned in fixed order. */
